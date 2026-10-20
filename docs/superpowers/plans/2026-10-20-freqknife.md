@@ -1161,11 +1161,7 @@ Tambahkan di akhir `worker.py`:
 ```python
 def friendly_error(exc):
     """Pesan yang aman ditampilkan ke user."""
-    import subprocess
-    if isinstance(exc, subprocess.CalledProcessError):
-        tail = (exc.stderr or b"").decode(errors="replace").strip().splitlines()[-5:]
-        return "ffmpeg gagal:\n" + "\n".join(tail) if tail else "ffmpeg gagal."
-    return str(exc) or exc.__class__.__name__
+    return str(exc).strip() or exc.__class__.__name__
 
 
 class SplitWorker(QThread):
@@ -1202,7 +1198,10 @@ class SplitWorker(QThread):
             self.finished_ok.emit(hasil)
 ```
 
-Tambahkan juga di ** atas file `worker.py`** (setelah import stdlib):
+Perbarui juga **di atas `worker.py`**: ganti docstring modul baris pertama menjadi
+`"""Orkestrasi pemisahan: `process_file` murni Python, `SplitWorker` pembungkus QThread tipis."""`
+— klaim "bisa dites tanpa Qt" tidak lagi benar setelah baris berikut ikut ditambahkan
+(setelah import stdlib):
 
 ```python
 from PySide6.QtCore import QThread, Signal
@@ -1214,7 +1213,7 @@ from PySide6.QtCore import QThread, Signal
 . .venv/bin/activate && pytest tests/test_worker.py
 ```
 
-Expected: 10 passed. Suite penuh harus 50 passed.
+Expected: 12 passed. Suite penuh harus 52 passed.
 
 - [ ] **Step 5: Commit**
 
