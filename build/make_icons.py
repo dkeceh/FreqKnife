@@ -50,24 +50,33 @@ def utama():
     ASET.mkdir(exist_ok=True)
     ukuran_png = [16, 32, 64, 128, 256, 512, 1024]
 
-    iconset = ASET / "icon.iconset"
-    if iconset.exists():
-        shutil.rmtree(iconset)
-    iconset.mkdir()
-
     for n in ukuran_png:
-        img = gambar(n)
-        img.save(ASET / f"icon_{n}.png")
-        if n in (16, 32, 128, 256):
-            img.save(iconset / f"icon_{n}x{n}.png")
-            img.save(iconset / f"icon_{2 * n}x{2 * n}@2x.png")
-        elif n == 512:
-            img.save(iconset / "icon_512x512.png")
+        gambar(n).save(ASET / f"icon_{n}.png")
 
     gambar(256).save(ASET / "icon.png")
     gambar(512).save(ASET / "icon_512.png")
     gambar(256).save(ASET / "icon.ico",
                      sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+
+    iconset = ASET / "icon.iconset"
+    if iconset.exists():
+        shutil.rmtree(iconset)
+    iconset.mkdir()
+
+    # slot @2x HARUS 2× piksel aslinya. Menyimpan gambar beresolusi dasar ke
+    # nama @2x membuat iconutil menerima file, tapi macOS menskalakannya dan
+    # ikon jadi buram di layar Retina.
+    for dasar in (16, 32, 128, 256, 512):
+        gambar(dasar).save(iconset / f"icon_{dasar}x{dasar}.png")
+        gambar(2 * dasar).save(iconset / f"icon_{dasar}x{dasar}@2x.png")
+
+    # verifikasi sendiri: nama file = piksel di dalamnya
+    for p in iconset.glob("icon_*.png"):  # glob "icon_" agar file AppleDouble ._ ikut terlewat
+        dasar = int(p.stem.replace("icon_", "").split("x")[0])
+        faktor = 2 if p.stem.endswith("@2x") else 1
+        with Image.open(p) as cek:
+            assert cek.size == (dasar * faktor,) * 2, \
+                f"{p.name} berisi {cek.size}, seharusnya {(dasar * faktor,) * 2}"
 
     if sys.platform == "darwin":
         subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(ASET / "icon.icns")],
