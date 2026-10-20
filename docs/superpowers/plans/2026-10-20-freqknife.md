@@ -1253,6 +1253,16 @@ def test_ekstensi_audio_dikenali():
     assert ".txt" not in audio_io.AUDIO_EXTENSIONS
 
 
+def test_filter_dialog_pakai_wildcard():
+    """Qt butuh "*.wav"; tanpa bintang semua file nonaktif di dialog Pilih."""
+    from PySide6.QtCore import QDir
+    import audio_io
+    for e in audio_io.AUDIO_EXTENSIONS:
+        assert "*" + e in main.FILTER, e
+    assert QDir.match("*.wav", "lagu.wav")
+    assert not QDir.match(".wav", "lagu.wav")  # jebakan yang menghasilkan bug ini
+
+
 @pytest.fixture(scope="module")
 def app():
     # tanpa display: semua test jendela pakai platform offscreen
@@ -1376,8 +1386,9 @@ from worker import SplitWorker
 
 AKAR = Path(__file__).resolve().parent
 ICON = AKAR / "assets" / "icon.icns" if sys.platform == "darwin" else AKAR / "assets" / "icon.png"
-# daftar ekstensi satu sumber: drag & drop dan dialog pilih memakai filter yang sama
-FILTER = "Audio (" + " ".join(sorted(audio_io.AUDIO_EXTENSIONS)) + ")"
+# filter dialog Qt butuh wildcard "*.wav", bukan ".wav" — QDir.match tanpa
+# bintang mengembalikan False, jadi semua file jadi nonaktif di dialog
+FILTER = "Audio (" + " ".join("*" + e for e in sorted(audio_io.AUDIO_EXTENSIONS)) + ")"
 
 
 def selftest():
@@ -1481,7 +1492,12 @@ class MainWindow(QMainWindow):
         urls = event.mimeData().urls()
         if not urls:
             return
-        self.set_sumber(urls[0].toLocalFile())
+        jalur = urls[0].toLocalFile()
+        # gerbang yang sama dengan dragEnterEvent — jangan sampai drop
+        # yang ditolak saat masuk tetap diterima saat dilepas
+        if Path(jalur).suffix.lower() not in audio_io.AUDIO_EXTENSIONS:
+            return
+        self.set_sumber(jalur)
         if len(urls) > 1:
             self.status.setText("Hanya file pertama yang dipakai.")
         event.acceptProposedAction()
@@ -1632,7 +1648,7 @@ if __name__ == "__main__":
 . .venv/bin/activate && pytest
 ```
 
-Expected: seluruh test lulus (58 passed).
+Expected: seluruh test lulus (59 passed).
 
 - [ ] **Step 5: Verifikasi manual UI**
 
