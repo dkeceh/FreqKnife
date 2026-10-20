@@ -99,3 +99,79 @@ def test_rekonstruksi_preset_lain():
         bands = dsp.split_bands(x, 44100, 6, preset)
         galat = float(np.abs(np.sum(bands, axis=0) - x).max())
         assert galat < 1e-3, f"preset {preset}: {galat}"
+
+
+def _energi(x):
+    return float(np.sum(np.square(x), dtype=np.float64))
+
+
+def test_nada_hanya_muncul_di_pita_yang_memuatnya():
+    sr = 44100
+    n = 32768
+    t = np.arange(n) / sr
+    x = (0.5 * np.sin(2 * np.pi * 100.0 * t)).astype(np.float32)
+
+    bands = dsp.split_bands(x, sr, 6)
+    energi = [_energi(b) for b in bands]
+    dominan = int(np.argmax(energi))
+
+    cuts = dsp.compute_cutoffs(sr, 6)
+    bawah = 0.0 if dominan == 0 else cuts[dominan - 1]
+    atas = dsp.max_frequency(sr) if dominan == len(cuts) else cuts[dominan]
+    assert bawah <= 100.0 <= atas, f"100 Hz jatuh di pita {dominan} ({bawah}-{atas})"
+
+    # pita lain nyaris nol dibanding pita dominan
+    for i, e in enumerate(energi):
+        if i != dominan:
+            assert e < energi[dominan] * 1e-3, f"pita {i} bocor: {e} vs {energi[dominan]}"
+
+
+def test_kanan_dan_kiri_tidak_tercampur():
+    sr = 44100
+    n = 16384
+    t = np.arange(n) / sr
+    kiri = (0.5 * np.sin(2 * np.pi * 300.0 * t)).astype(np.float32)
+    kanan = (0.5 * np.sin(2 * np.pi * 5000.0 * t)).astype(np.float32)
+    x = np.stack([kiri, kanan], axis=1)
+
+    bands = dsp.split_bands(x, sr, 5)
+    for b in bands:
+        assert b.shape[1] == 2
+        assert b.dtype == np.float32
+    # pilih pita berdasarkan titik cut, bukan asumsi indeks
+    cuts = dsp.compute_cutoffs(sr, 5)
+    low = bands[int(np.searchsorted(cuts, 300.0))]
+    assert _energi(low[:, 0]) > _energi(low[:, 1]) * 10
+    high = bands[int(np.searchsorted(cuts, 5000.0))]
+    assert _energi(high[:, 1]) > _energi(high[:, 0]) * 10
+
+
+def test_masukan_1d_menghasilkan_1d():
+    x = np.zeros(8192, dtype=np.float32)
+    bands = dsp.split_bands(x, 44100, 4)
+    assert all(b.ndim == 1 for b in bands)
+    # iter_split juga harus 1-D, bukan (n, 1)
+    for _, chunk in dsp.iter_split(x, 44100, 4):
+        assert chunk.ndim == 1
+        assert chunk.dtype == np.float32
+
+
+def test_iter_split_menghasilkan_seluruh_sampel():
+    x = _acak(n=10000, ch=2)
+    terkumpul = [0] * 5
+    for i, chunk in dsp.iter_split(x, 44100, 5):
+        terkumpul[i] += len(chunk)
+        # bentuk chunk harus mengikuti masukan (stereo = 2-D) dan selalu float32
+        assert chunk.ndim == 2 and chunk.dtype == np.float32
+    # persis sepanjang sinyal — worker menulis stream ini tanpa memotong.
+    # Diukur langsung dari iter_split, bukan split_bands, supaya truncation
+    # [:total] di split_bands tidak bisa menyembunyikan bug kelebihan-emit.
+    assert terkumpul == [len(x)] * 5
+
+
+def test_split_pada_sample_rate_8000_tetap_jalan():
+    x = _acak(n=8192, ch=1, seed=11)
+    bands = dsp.split_bands(x, 8000, 30)
+    assert len(bands) == len(dsp.band_masks(dsp.FRAME_DEFAULT, 8000, 30))
+    galat = float(np.abs(np.sum(bands, axis=0) - x).max())
+    assert galat < 1e-3
