@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+import audio_io
 import main
 
 
@@ -88,7 +89,7 @@ def test_batal_awal_kembalikan_keadaan_normal(app, jendela, tmp_path, monkeypatc
 
     src = tmp_path / "lagu.wav"
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+        [audio_io.ffmpeg_path(), "-v", "error", "-y", "-f", "lavfi",
          "-i", "sine=frequency=440:sample_rate=44100:duration=4", str(src)],
         check=True)
 

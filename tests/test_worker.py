@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(
 def _buat_sumber(tmp_path, nama="lagu.wav", sr=44100, detik=2.0):
     path = tmp_path / nama
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+        [audio_io.ffmpeg_path(), "-v", "error", "-y", "-f", "lavfi",
          "-i", f"sine=frequency=440:sample_rate={sr}:duration={detik}", path],
         check=True)
     return path
@@ -43,7 +43,7 @@ def test_progress_monoton_naik_sampai_100(tmp_path):
 def test_format_output_mengikuti_input_mp3(tmp_path):
     src = _buat_sumber(tmp_path, nama="lagu.wav")
     mp3 = tmp_path / "lagu.mp3"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), str(mp3)], check=True)
+    subprocess.run([audio_io.ffmpeg_path(), "-v", "error", "-y", "-i", str(src), str(mp3)], check=True)
     hasil = worker.process_file(mp3, tmp_path / "keluar", 3, "Flat (log)")
     assert all(p.suffix == ".mp3" for p in hasil)
     assert audio_io.probe(hasil[0])["channels"] == 1

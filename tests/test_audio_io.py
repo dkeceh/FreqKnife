@@ -12,7 +12,7 @@ pytestmark = pytest.mark.skipif(
 
 def _buat_wav(path, sr=44100, ch=2, detik=1.0):
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+        [audio_io.ffmpeg_path(), "-v", "error", "-y", "-f", "lavfi",
          "-i", f"sine=frequency=440:sample_rate={sr}:duration={detik}",
          "-ac", str(ch), str(path)], check=True)
     return path
@@ -46,7 +46,7 @@ def test_open_raw_membaca_sebagai_rangkaian(tmp_path):
 def test_decode_mp3_bisa_dibuka(tmp_path):
     wav = _buat_wav(tmp_path / "u.wav")
     mp3 = tmp_path / "u.mp3"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(wav), str(mp3)], check=True)
+    subprocess.run([audio_io.ffmpeg_path(), "-v", "error", "-y", "-i", str(wav), str(mp3)], check=True)
     sr, ch, n = audio_io.decode_to_raw(mp3, tmp_path / "u.f32le")
     assert sr == 44100 and ch == 2 and n > 40000
 
@@ -64,11 +64,10 @@ def test_ffmpeg_missing_tidak_pernah_error():
 
 def test_ffmpeg_missing_menghormati_resolusi_alat(monkeypatch):
     """Bundel PyInstaller: binary ada tapi tidak ada di PATH."""
-    import shutil as _sh
-
-    asli_ffmpeg = _sh.which("ffmpeg")
-    asli_ffprobe = _sh.which("ffprobe")
-    assert asli_ffmpeg and asli_ffprobe, "tes ini butuh ffmpeg asli di PATH"
+    # lewat ffmpeg_path() agar tetap jalan di CI, yang menyetel FFMPEG_BIN
+    # tanpa menaruh ffmpeg di PATH
+    asli_ffmpeg = audio_io.ffmpeg_path()
+    asli_ffprobe = audio_io.ffprobe_path()
 
     # mode bundel: PATH kosong, _alat menemukan binary
     monkeypatch.setattr(audio_io.shutil, "which", lambda *a, **k: None)
@@ -82,12 +81,31 @@ def test_ffmpeg_missing_menghormati_resolusi_alat(monkeypatch):
     assert audio_io.ffmpeg_missing() is True
 
 
+def test_alat_menghormati_env_ffmpeg_bin(tmp_path, monkeypatch):
+    """CI menyetel FFMPEG_BIN/FFPROBE_BIN lewat $GITHUB_ENV. Tanpa ini
+    ffmpeg_missing() mengabaikan binary yang baru terunduh, sehingga selftest
+    gagal dan seluruh test audio ter-skip walau ffmpeg sudah ada."""
+    ff = tmp_path / "ffmpeg"
+    ff.write_bytes(b"#!/bin/sh\nexit 0\n")
+    monkeypatch.setenv("FFMPEG_BIN", str(ff))
+    assert audio_io._alat("ffmpeg") == str(ff), "env harus mengalahkan PATH"
+
+    fp = tmp_path / "ffprobe"
+    fp.write_bytes(b"#!/bin/sh\nexit 0\n")
+    monkeypatch.setenv("FFPROBE_BIN", str(fp))
+    assert audio_io.ffmpeg_missing() is False
+
+
 def test_alat_menemukan_binary_berekstensi_exe_di_bundel(tmp_path, monkeypatch):
     import types
 
     # pakai stand-in modul sys: hanya sys._MEIPASS yang dibaca _alat,
     # jadi global sys tidak perlu disentuh sama sekali
     def set_bundel(path):
+        # cabang env harus dimatikan dulu: CI menyetel FFMPEG_BIN, dan env
+        # memang sengaja didahulukan di atas bundel
+        monkeypatch.delenv("FFMPEG_BIN", raising=False)
+        monkeypatch.delenv("FFPROBE_BIN", raising=False)
         monkeypatch.setattr(
             audio_io, "sys", types.SimpleNamespace(_MEIPASS=str(path)))
 

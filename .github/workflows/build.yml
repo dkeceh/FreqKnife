@@ -56,7 +56,7 @@ jobs:
 
       - name: Jalankan test
         shell: bash
-        # Setelah langkah unduh, jadi FFMPEG_FF/FFMPEG_FP sudah terisi dan test
+        # Setelah langkah unduh, jadi FFMPEG_BIN/FFPROBE_BIN sudah terisi dan test
         # audio_io memakai binary statis yang sama yang akan ikut terbundel.
         # GUI test menyetel QT_QPA_PLATFORM=offscreen sendiri, jadi aman tanpa display.
         run: python -m pytest
@@ -68,8 +68,8 @@ jobs:
           pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
             --icon assets/icon.icns \
             --add-data "assets/icon.icns:assets" \
-            --add-binary "$FFMPEG_FF:." \
-            --add-binary "$FFMPEG_FP:." \
+            --add-binary "$FFMPEG_BIN:." \
+            --add-binary "$FFPROBE_BIN:." \
             main.py
 
       - name: Build Windows
@@ -83,8 +83,8 @@ jobs:
           pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
             --icon assets/icon.ico \
             --add-data "assets/icon.png;assets" \
-            --add-binary "$FFMPEG_FF;." \
-            --add-binary "$FFMPEG_FP;." \
+            --add-binary "$FFMPEG_BIN;." \
+            --add-binary "$FFPROBE_BIN;." \
             main.py
 
       - name: Build Linux
@@ -94,8 +94,8 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
             --add-data "assets/icon.png:assets" \
-            --add-binary "$FFMPEG_FF:." \
-            --add-binary "$FFMPEG_FP:." \
+            --add-binary "$FFMPEG_BIN:." \
+            --add-binary "$FFPROBE_BIN:." \
             main.py
 
       - name: Sertakan lisensi ffmpeg

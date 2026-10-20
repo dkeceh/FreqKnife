@@ -2,7 +2,7 @@
 
 Pemakaian:
     python build/get_ffmpeg.py           # dua baris: jalur ffmpeg, lalu ffprobe
-    python build/get_ffmpeg.py --env     # FFMPEG_FF= / FFMPEG_FP= untuk $GITHUB_ENV
+    python build/get_ffmpeg.py --env     # FFMPEG_BIN= / FFPROBE_BIN= untuk $GITHUB_ENV
 
 shortcut: verifikasi = kedua binary benar-benar bisa dijalankan (`-version`),
 bukan penguncian hash — itu yang menjamin aplikasi jalan di mesin lain. Pin
@@ -144,8 +144,9 @@ def utama(env=False):
         print(f"periksa {p.name}: {_uji(p)}", file=sys.stderr)
 
     if env:
-        print(f"FFMPEG_FF={ff.as_posix()}")
-        print(f"FFMPEG_FP={fp.as_posix()}")
+        # nama harus sama dengan yang dibaca audio_io._alat(): FFMPEG_BIN / FFPROBE_BIN
+        print(f"FFMPEG_BIN={ff.as_posix()}")
+        print(f"FFPROBE_BIN={fp.as_posix()}")
     else:
         print(ff.as_posix())
         print(fp.as_posix())

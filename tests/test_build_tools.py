@@ -11,6 +11,18 @@ sys.path.insert(0, str(Path(main.__file__).resolve().parent / "build"))
 import get_ffmpeg  # noqa: E402
 
 
+def test_env_dipakai_get_ffmpeg_sama_dengan_yang_dibaca_audio_io():
+    """Regresi: --env pernah mencetak FFMPEG_FF/FFMPEG_FP, padahal
+    audio_io._alat hanya membaca FFMPEG_BIN/FFPROBE_BIN. Akibatnya cabang env
+    jadi kode mati — lokal tersembunyi karena ffmpeg ada di PATH, dan di bundel
+    karena _MEIPASS menanganinya. Baru ketahuan saat pytest dijalankan di CI."""
+    src = Path(get_ffmpeg.__file__).read_text()
+    for nama in ("FFMPEG_BIN=", "FFPROBE_BIN="):
+        assert nama in src, f"--env harus mencetak {nama}"
+    for nama in ("FFMPEG_FF=", "FFMPEG_FP="):
+        assert nama not in src, f"{nama} tidak pernah dibaca audio_io._alat"
+
+
 def test_pemetaan_platform_ke_sumber():
     assert get_ffmpeg.sumber("darwin", "arm64") == ("martin", "macos/arm64")
     assert get_ffmpeg.sumber("darwin", "x86_64") == ("martin", "macos/amd64")
