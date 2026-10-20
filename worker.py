@@ -22,7 +22,6 @@ def process_file(source, dest_dir, n_bands, preset,
     """
     source = Path(source)
     dest_dir = Path(dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
     written = [] if written is None else written
     on_progress = on_progress or (lambda p: None)
     on_status = on_status or (lambda s: None)
@@ -70,6 +69,7 @@ def process_file(source, dest_dir, n_bands, preset,
                 fh.close()
         cek()
 
+        dest_dir.mkdir(parents=True, exist_ok=True)
         hasil = []
         for i in range(n_out):
             cek()

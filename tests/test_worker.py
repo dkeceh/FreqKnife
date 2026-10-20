@@ -104,3 +104,16 @@ def test_folder_temp_dibersihkan(tmp_path, monkeypatch):
     src = _buat_sumber(tmp_path, detik=0.5)
     worker.process_file(src, tmp_path, 2, "Rata (log)")
     assert list((tmp_path / "tmp").iterdir()) == []
+
+
+def test_batal_tidak_meninggalkan_folder_tujuan(tmp_path):
+    src = _buat_sumber(tmp_path, detik=3.0)
+    tujuan = tmp_path / "belum-pernah-ada"
+    panggilan = []
+
+    with pytest.raises(worker.JobCancelled):
+        worker.process_file(src, tujuan, 5, "Rata (log)",
+                            on_progress=lambda p: panggilan.append(p),
+                            is_cancelled=lambda: len(panggilan) > 3)
+
+    assert not tujuan.exists()
