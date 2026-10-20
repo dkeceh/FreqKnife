@@ -6,6 +6,7 @@ venv/
 build/*
 !build/make_icons.py
 !build/build_mac.sh
+!build/get_ffmpeg.py
 dist/
 vendor/
 # pyinstaller menulis FreqKnife.spec di root setiap build

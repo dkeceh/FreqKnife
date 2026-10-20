@@ -23,14 +23,50 @@ FILTER = "Audio (" + " ".join("*" + e for e in sorted(audio_io.AUDIO_EXTENSIONS)
 
 
 def selftest():
-    """Verifikasi binary terbungkus tanpa GUI. Dipakai build dan CI."""
+    """Verifikasi binary terbungkus tanpa GUI: DSP, lalu ffmpeg yang dibundel."""
+    import tempfile
+    import wave
+
     import numpy as np
+
     rng = np.random.default_rng(0)
     x = (rng.standard_normal((8192, 2)) * 0.1).astype(np.float32)
     bands = dsp.split_bands(x, 44100, 5)
     galat = float(np.abs(np.sum(bands, axis=0) - x).max())
-    print(f"selftest: {len(bands)} pita, galat rekonstruksi {galat:.2e}")
-    return 0 if galat < 1e-3 else 1
+    print(f"selftest dsp: {len(bands)} pita, galat rekonstruksi {galat:.2e}")
+    if galat >= 1e-3:
+        return 1
+
+    # ffmpeg/ffprobe yang dibundel harus benar-benar bisa dipakai. Tanpa
+    # langkah ini hasil CI tidak membuktikan apa-apa: DSP tidak pernah
+    # menyentuh subprocess, jadi binary yang rusak tetap dianggap lulus.
+    if audio_io.ffmpeg_missing():
+        print("selftest ffmpeg: TIDAK DITEMUKAN")
+        return 1
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="freqknife-selftest-") as kota:
+            kota = Path(kota)
+            src, raw = kota / "uji.wav", kota / "uji.f32le"
+            keluar = kota / "uji_band01.wav"
+            with wave.open(str(src), "wb") as w:
+                w.setnchannels(2)
+                w.setsampwidth(2)
+                w.setframerate(44100)
+                w.writeframes((x * 32767).astype("<i2").tobytes())
+
+            # ffprobe lewat decode_to_raw (juga membuktikan ffmpeg jalan)
+            sr, ch, n = audio_io.decode_to_raw(src, raw)
+            ext, codec = audio_io.output_plan(".wav")
+            audio_io.encode_raw(raw, keluar, sr, ch, codec)
+            if not keluar.exists() or keluar.stat().st_size == 0:
+                raise RuntimeError("keluaran kosong")
+            print(f"selftest ffmpeg: decode {n} frame {ch}ch {sr}Hz, encode {ext} OK")
+    except Exception as exc:
+        print(f"selftest ffmpeg: GAGAL — {exc}")
+        return 1
+
+    return 0
 
 
 class MainWindow(QMainWindow):

@@ -1,0 +1,92 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            nama: FreqKnife-mac
+          - os: windows-latest
+            nama: FreqKnife-win
+          - os: ubuntu-latest
+            nama: FreqKnife-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pasang dependensi
+        shell: bash
+        run: pip install -r requirements.txt
+        # icon TIDAK diregenerasi di CI: aset sudah di-commit, dan di luar
+        # macOS skrip itu melewati iconutil lalu meninggalkan assets/icon.iconset/
+        # yang tidak di-track sambil "memverifikasi" icns lama.
+
+      - name: Unduh ffmpeg statis
+        shell: bash
+        # binary brew/apt/choco tidak bisa dibundel (library dinamisnya tertinggal
+        # di mesin build), jadi ambil build statis. Baris ini juga membuktikan
+        # kedua binary benar-benar bisa dijalankan sebelum build dimulai.
+        run: python build/get_ffmpeg.py --env >> "$GITHUB_ENV"
+
+      - name: Build macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
+            --icon assets/icon.icns \
+            --add-data "assets/icon.icns:assets" \
+            --add-binary "$FFMPEG_FF:." \
+            --add-binary "$FFMPEG_FP:." \
+            main.py
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # --icon .ico untuk ikon eksekutablenya; --add-data icon.png karena
+          # main.ICON mencari icon.png di luar macOS.
+          # Jalur sudah berbentuk C:/... (dicetak as_posix), jadi aman untuk
+          # PyInstaller native Windows dan tidak dimakan backslash Git Bash.
+          pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
+            --icon assets/icon.ico \
+            --add-data "assets/icon.png;assets" \
+            --add-binary "$FFMPEG_FF;." \
+            --add-binary "$FFMPEG_FP;." \
+            main.py
+
+      - name: Build Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        # tanpa --icon: PyInstaller tidak memakai ikon di Linux
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
+            --add-data "assets/icon.png:assets" \
+            --add-binary "$FFMPEG_FF:." \
+            --add-binary "$FFMPEG_FP:." \
+            main.py
+
+      - name: Selftest binary
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   ./dist/FreqKnife.app/Contents/MacOS/FreqKnife --selftest ;;
+            Windows) ./dist/FreqKnife.exe --selftest ;;
+            Linux)   ./dist/FreqKnife --selftest ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.nama }}
+          path: dist/FreqKnife*
+          if-no-files-found: error

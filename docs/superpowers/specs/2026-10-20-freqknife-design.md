@@ -228,11 +228,16 @@ wajib di CI karena butuh ffmpeg.
 ## 10. Packaging & build lintas OS
 
 - **PyInstaller**: `--onefile --windowed --icon=freqknife.icns`, bundle id
-  `com.freqknife.app`, `ffmpeg` dan `ffprobe` ikut dibundel lewat `binaries` di spec.
+  `com.freqknife.app`, `ffmpeg` dan `ffprobe` ikut dibundel sebagai **build statis** yang diunduh
+  `build/get_ffmpeg.py` (macOS/Linux: ffmpeg.martin-riedl.de, Windows/Linux: BtbN/FFmpeg-Builds).
+  Binary dari brew/apt/choco TIDAK bisa dipakai: mereka bergantung puluhan
+  library dinamis yang hanya ada di mesin build, sehingga aplikasi gagal di
+  mesin lain sementara CI tetap hijau karena selftest berjalan di mesin yang sama.
 - **Icon** dibuat sendiri: SVG → PNG (16/32/128/256/512) → `.icns` via `iconutil`
   untuk macOS, `.ico` untuk Windows, `.png` 512 untuk Linux. Bukan icon bawaan Python.
 - **GitHub Actions** matrix `macos-latest` / `windows-latest` / `ubuntu-latest`
-  menghasilkan `FreqKnife-mac.dmg`, `FreqKnife-win.exe`, `FreqKnife-linux.AppImage`.
+  menghasilkan `FreqKnife.app` (macOS), `FreqKnife.exe` (Windows), dan executable
+  tunggal (Linux). AppImage ditunda — butuh `appimagetool` tambahan.
 - **Signing**: ad-hoc (`codesign --force --deep -s -`) untuk rilis internal.
   Notarisasi Apple butuh akun Apple Developer — di luar cakupan rilis pertama.
 - Catatan kompatibilitas: untuk distribusi luas, build macOS di runner macOS 13/14
