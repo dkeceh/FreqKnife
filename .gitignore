@@ -7,6 +7,8 @@ build/*
 !build/make_icons.py
 !build/build_mac.sh
 !build/get_ffmpeg.py
+# teks lisensi GPLv3 untuk ffmpeg yang dibundel — disalin ke dalam artefak
+!build/LICENSE.GPLv3
 dist/
 vendor/
 # pyinstaller menulis FreqKnife.spec di root setiap build

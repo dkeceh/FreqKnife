@@ -25,5 +25,11 @@ pyinstaller --noconfirm --clean --onefile --windowed \
   main.py
 
 echo "Build selesai: dist/FreqKnife.app"
+
+# Biner ffmpeg yang dibundel berlisensi GPLv3; distribusi wajib menyertakan
+# teks lisensinya. Ditaruh di lokasi stabil yang bisa ditemukan user, bukan di
+# direktori ekstraksi onefile yang hilang saat app ditutup.
+cp build/LICENSE.GPLv3 dist/FreqKnife.app/Contents/Resources/
+
 echo "Selftest:"
 ./dist/FreqKnife.app/Contents/MacOS/FreqKnife --selftest

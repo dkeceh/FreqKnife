@@ -2,7 +2,7 @@
 
 import numpy as np
 
-PRESETS = {"Rata (log)": 1.0, "Bass dominan": 1.6, "Mid-High dominan": 0.62}
+PRESETS = {"Flat (log)": 1.0, "Bass-heavy": 1.6, "Mid/High-heavy": 0.62}
 PRESET_NAMES = list(PRESETS)
 
 F_MIN = 20.0

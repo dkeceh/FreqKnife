@@ -32,8 +32,8 @@ def test_cutoff_batas_2_pita_tepat_satu_garis():
 
 
 def test_preset_bass_menumpukkan_cut_di_bawah():
-    bass = dsp.compute_cutoffs(44100, 8, "Bass dominan")
-    tinggi = dsp.compute_cutoffs(44100, 8, "Mid-High dominan")
+    bass = dsp.compute_cutoffs(44100, 8, "Bass-heavy")
+    tinggi = dsp.compute_cutoffs(44100, 8, "Mid/High-heavy")
     assert np.median(bass) < np.median(tinggi)
 
 

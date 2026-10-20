@@ -66,11 +66,11 @@ def probe(path):
          "format=duration:stream=sample_rate,channels", "-of", "json", str(path)],
         capture_output=True, text=True)
     if hasil.returncode != 0:
-        raise RuntimeError(f"ffmpeg tidak bisa membuka {Path(path).name}")
+        raise RuntimeError(f"ffmpeg could not open {Path(path).name}")
     data = json.loads(hasil.stdout)
     stream = next((s for s in data.get("streams", []) if s.get("sample_rate")), None)
     if stream is None:
-        raise RuntimeError(f"{Path(path).name} tidak punya jalur audio")
+        raise RuntimeError(f"{Path(path).name} has no audio stream")
     return {
         "sample_rate": int(stream["sample_rate"]),
         "channels": int(stream["channels"]),
@@ -88,7 +88,7 @@ def decode_to_raw(path, raw_path):
             stdout=fh, stderr=subprocess.PIPE)
     if hasil.returncode != 0:
         raise RuntimeError(
-            "ffmpeg gagal decode:\n" +
+            "ffmpeg decode failed:\n" +
             "\n".join(hasil.stderr.decode(errors="replace").strip().splitlines()[-5:]))
     n_frames = os.path.getsize(raw_path) // (4 * info["channels"])
     return info["sample_rate"], info["channels"], n_frames
@@ -132,6 +132,6 @@ def encode_raw(raw_path, out_path, sample_rate, channels, codec_args):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if hasil.returncode != 0:
         raise RuntimeError(
-            "ffmpeg gagal encode:\n" +
+            "ffmpeg encode failed:\n" +
             "\n".join(hasil.stderr.decode(errors="replace").strip().splitlines()[-5:]))
     return Path(out_path)

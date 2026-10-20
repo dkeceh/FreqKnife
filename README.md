@@ -42,13 +42,11 @@ builds all three:
 
 ## How to use
 
-The interface is in Indonesian:
-
 1. Open the app, then pick a file or **drag one onto the window**.
 2. Set the **number of output files** (slider 3–10, or type 2–30).
 3. Pick a **preset** for how the cut points are spread.
 4. Destination folder defaults to the source folder. Change it if you want.
-5. Click **Proses**. The progress bar shows the percentage; **Batalkan** can be
+5. Click **Process**. The progress bar shows the percentage; **Cancel** can be
    pressed at any time and partial results are cleaned up.
 
 5 output files means **4** cut points. With `lagu.mp3` as the source:
@@ -67,15 +65,15 @@ Cut points are always spread logarithmically from 20 Hz up to
 
 | Preset | Spreading |
 |---|---|
-| Rata (log) | even on a log scale |
-| Bass dominan | lower bands narrower — bass resolves into finer bars |
-| Mid-High dominan | upper bands narrower — mid/high resolves into finer bars |
+| Flat (log) | even on a log scale |
+| Bass-heavy | lower bands narrower — bass resolves into finer bars |
+| Mid/High-heavy | upper bands narrower — mid/high resolves into finer bars |
 
-Measured at 44.1 kHz with 5 bands, the lowest band is 60 Hz wide for *Rata*,
-14 Hz for *Bass dominan*, and 235 Hz for *Mid-High dominan*.
+Measured at 44.1 kHz with 5 bands, the lowest band is 60 Hz wide for *Flat (log)*,
+14 Hz for *Bass-heavy*, and 235 Hz for *Mid/High-heavy*.
 
-For a visualizer, that is the knob that matters: *Bass dominan* gives you
-several low bars if the bass is what should move, and *Mid-High dominan* does
+For a visualizer, that is the knob that matters: *Bass-heavy* gives you
+several low bars if the bass is what should move, and *Mid/High-heavy* does
 the same for the top end.
 
 ### Formats
@@ -133,6 +131,9 @@ python main.py
 python main.py --selftest
 ```
 
+CI runs the full suite on all three platforms before building, so a green
+artifact also means the tests passed on that OS.
+
 `--selftest` verifies the bundled binary **without a GUI**: it checks DSP
 reconstruction error, then performs a real decode + encode with the bundled
 ffmpeg. This is what stops a broken artifact from being uploaded — a Linux build
@@ -162,8 +163,10 @@ subprocess, so the MIT license applies to FreqKnife's source and does not carry
 over to it.
 
 But **distributing FreqKnife artifacts means also distributing GPLv3 software**,
-so its conditions apply to that distribution — at minimum, including the GPL
-license text and providing the ffmpeg source:
+so its conditions apply to that distribution. The license text ships inside every
+artifact — `FreqKnife.app/Contents/Resources/LICENSE.GPLv3` on macOS, and
+`LICENSE.GPLv3` next to the executable on Windows and Linux. Corresponding
+source:
 
 - https://www.martin-riedl.de/ffmpeg/ (macOS)
 - https://github.com/BtbN/FFmpeg-Builds (Linux, Windows)

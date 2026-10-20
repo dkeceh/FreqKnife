@@ -33,7 +33,7 @@ def process_file(source, dest_dir, n_bands, preset,
         if is_cancelled():
             raise JobCancelled()
 
-    on_status(f"Membuka {source.name}…")
+    on_status(f"Opening {source.name}…")
     on_progress(2)
     tmp = Path(tempfile.mkdtemp(prefix="freqknife-"))
     samples = None
@@ -43,7 +43,7 @@ def process_file(source, dest_dir, n_bands, preset,
         samples = audio_io.open_raw(raw_in, n_frames, channels)
         cek()
 
-        on_status("Memotong pita…")
+        on_status("Cutting bands…")
         masks = dsp.band_masks(FRAME, sr, n_bands, preset)
         n_out = len(masks)
         if n_out != n_bands:
@@ -85,7 +85,7 @@ def process_file(source, dest_dir, n_bands, preset,
             on_progress(30 + int(70 * (i + 1) / n_out))
 
         on_progress(100)
-        on_status("Selesai")
+        on_status("Done")
         return hasil
     finally:
         del samples

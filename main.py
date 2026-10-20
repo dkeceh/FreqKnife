@@ -33,7 +33,7 @@ def selftest():
     x = (rng.standard_normal((8192, 2)) * 0.1).astype(np.float32)
     bands = dsp.split_bands(x, 44100, 5)
     galat = float(np.abs(np.sum(bands, axis=0) - x).max())
-    print(f"selftest dsp: {len(bands)} pita, galat rekonstruksi {galat:.2e}")
+    print(f"selftest dsp: {len(bands)} bands, reconstruction error {galat:.2e}")
     if galat >= 1e-3:
         return 1
 
@@ -41,7 +41,7 @@ def selftest():
     # langkah ini hasil CI tidak membuktikan apa-apa: DSP tidak pernah
     # menyentuh subprocess, jadi binary yang rusak tetap dianggap lulus.
     if audio_io.ffmpeg_missing():
-        print("selftest ffmpeg: TIDAK DITEMUKAN")
+        print("selftest ffmpeg: NOT FOUND")
         return 1
 
     try:
@@ -63,7 +63,7 @@ def selftest():
                 raise RuntimeError("keluaran kosong")
             print(f"selftest ffmpeg: decode {n} frame {ch}ch {sr}Hz, encode {ext} OK")
     except Exception as exc:
-        print(f"selftest ffmpeg: GAGAL — {exc}")
+        print(f"selftest ffmpeg: FAILED — {exc}")
         return 1
 
     return 0
@@ -81,13 +81,13 @@ class MainWindow(QMainWindow):
 
         self.sumber = QLineEdit()
         self.sumber.setReadOnly(True)
-        self.sumber.setPlaceholderText("Pilih file… atau tarik ke sini")
+        self.sumber.setPlaceholderText("Choose a file… or drag one here")
         self.tujuan = QLineEdit()
-        self.tujuan.setPlaceholderText("Folder tujuan — default sama dengan folder sumber")
+        self.tujuan.setPlaceholderText("Destination folder — defaults to the source folder")
 
-        btn_sumber = QPushButton("Pilih…")
+        btn_sumber = QPushButton("Choose…")
         btn_sumber.clicked.connect(self.pilih_sumber)
-        btn_tujuan = QPushButton("Pilih…")
+        btn_tujuan = QPushButton("Choose…")
         btn_tujuan.clicked.connect(self.pilih_tujuan)
 
         self.slider = QSlider(Qt.Horizontal)
@@ -106,28 +106,28 @@ class MainWindow(QMainWindow):
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
-        self.status = QLabel("Pilih file suara — atau tarik file ke jendela ini.")
+        self.status = QLabel("Choose an audio file — or drag one onto this window.")
 
-        self.btn_batal = QPushButton("Batalkan")
+        self.btn_batal = QPushButton("Cancel")
         self.btn_batal.setEnabled(False)
         self.btn_batal.clicked.connect(self.batalkan)
-        self.btn_proses = QPushButton("Proses")
+        self.btn_proses = QPushButton("Process")
         self.btn_proses.setDefault(True)
         self.btn_proses.clicked.connect(self.proses)
 
         isi = QWidget()
         grid = QGridLayout()
-        grid.addWidget(QLabel("Sumber"), 0, 0)
+        grid.addWidget(QLabel("Source"), 0, 0)
         grid.addWidget(self.sumber, 0, 1)
         grid.addWidget(btn_sumber, 0, 2)
-        grid.addWidget(QLabel("Tujuan"), 1, 0)
+        grid.addWidget(QLabel("Destination"), 1, 0)
         grid.addWidget(self.tujuan, 1, 1)
         grid.addWidget(btn_tujuan, 1, 2)
 
         jumlah = QHBoxLayout()
         jumlah.addWidget(self.slider)
         jumlah.addWidget(self.spin)
-        jumlah.addWidget(QLabel("file"))
+        jumlah.addWidget(QLabel("files"))
 
         tombol = QHBoxLayout()
         tombol.addStretch(1)
@@ -136,10 +136,10 @@ class MainWindow(QMainWindow):
 
         utama = QVBoxLayout(isi)
         utama.addLayout(grid)
-        utama.addWidget(QLabel("Jumlah file output"))
+        utama.addWidget(QLabel("Number of output files"))
         utama.addLayout(jumlah)
         utama.addWidget(self.hint)
-        utama.addWidget(QLabel("Preset sebaran"))
+        utama.addWidget(QLabel("Spread preset"))
         utama.addWidget(self.preset)
         utama.addWidget(self.bar)
         utama.addWidget(self.status)
@@ -166,12 +166,12 @@ class MainWindow(QMainWindow):
             return
         self.set_sumber(jalur)
         if len(urls) > 1:
-            self.status.setText("Hanya file pertama yang dipakai.")
+            self.status.setText("Only the first file is used.")
         event.acceptProposedAction()
 
     # --- pemilihan file ----------------------------------------------
     def pilih_sumber(self):
-        jalur, _ = QFileDialog.getOpenFileName(self, "Pilih file suara", "", FILTER)
+        jalur, _ = QFileDialog.getOpenFileName(self, "Choose an audio file", "", FILTER)
         if jalur:
             self.set_sumber(jalur)
 
@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
         self._sinkron_hint()
 
     def pilih_tujuan(self):
-        jalur = QFileDialog.getExistingDirectory(self, "Pilih folder tujuan", self.tujuan.text())
+        jalur = QFileDialog.getExistingDirectory(self, "Choose destination folder", self.tujuan.text())
         if jalur:
             self.tujuan.setText(jalur)
             self.dest_manual = True
@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
 
     def _sinkron_hint(self):
         n = dsp.clamp_bands(self.spin.value())
-        self.hint.setText(f"Akan menghasilkan {n} file")
+        self.hint.setText(f"This will create {n} files")
 
     # --- proses --------------------------------------------------------
     def proses(self):
@@ -206,14 +206,14 @@ class MainWindow(QMainWindow):
         tujuan = self.tujuan.text().strip() or str(Path(sumber).parent)
 
         if not sumber or not Path(sumber).exists():
-            QMessageBox.warning(self, "FreqKnife", "File sumber belum dipilih atau tidak ada.")
+            QMessageBox.warning(self, "FreqKnife", "No source file selected, or it does not exist.")
             return
         if not Path(sumber).is_file():
-            QMessageBox.warning(self, "FreqKnife", "Sumber harus berupa file, bukan folder.")
+            QMessageBox.warning(self, "FreqKnife", "The source must be a file, not a folder.")
             return
         if audio_io.ffmpeg_missing():
             QMessageBox.critical(self, "FreqKnife",
-                                 "ffmpeg tidak ditemukan. Aplikasi memerlukan ffmpeg.")
+                                 "ffmpeg was not found. This app requires ffmpeg.")
             return
 
         # folder tujuan tidak dibuat di sini: worker membuatnya tepat saat
@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         self.btn_proses.setEnabled(False)
         self.btn_batal.setEnabled(True)
         self.bar.setValue(0)
-        self.status.setText("Menyiapkan…")
+        self.status.setText("Preparing…")
 
         self.worker = SplitWorker(sumber, tujuan, dsp.clamp_bands(self.spin.value()),
                                   self.preset.currentText(), self)
@@ -236,7 +236,7 @@ class MainWindow(QMainWindow):
     def batalkan(self):
         if self.worker is not None:
             self.btn_batal.setEnabled(False)
-            self.status.setText("Membatalkan…")
+            self.status.setText("Cancelling…")
             self.worker.cancel()
 
     def _kembalikan_tombol(self):
@@ -245,13 +245,13 @@ class MainWindow(QMainWindow):
 
     def _selesai(self, hasil):
         self._kembalikan_tombol()
-        self.status.setText(f"Selesai — {len(hasil)} file dibuat.")
+        self.status.setText(f"Done — {len(hasil)} files created.")
         daftar = "\n".join(p.name for p in hasil)
         box = QMessageBox(self)
         box.setWindowTitle("FreqKnife")
-        box.setText(f"{len(hasil)} file berhasil dibuat.")
+        box.setText(f"{len(hasil)} files created successfully.")
         box.setInformativeText(daftar)
-        buka = box.addButton("Buka Folder Tujuan", QMessageBox.AcceptRole)
+        buka = box.addButton("Open Destination Folder", QMessageBox.AcceptRole)
         box.addButton(QMessageBox.Close)
         box.exec()
         if box.clickedButton() is buka and hasil:
@@ -270,14 +270,14 @@ class MainWindow(QMainWindow):
         self._bersihkan(ditulis)
         self._kembalikan_tombol()
         self.bar.setValue(0)
-        self.status.setText("Dibatalkan. Hasil parsial dihapus.")
+        self.status.setText("Cancelled. Partial results removed.")
 
     def _gagal(self, pesan):
         # encode yang gagal di tengah juga meninggalkan file parsial
         self._bersihkan(self.worker.written)
         self._kembalikan_tombol()
         self.bar.setValue(0)
-        self.status.setText("Gagal.")
+        self.status.setText("Failed.")
         QMessageBox.critical(self, "FreqKnife", pesan)
 
     def closeEvent(self, event):
@@ -287,7 +287,7 @@ class MainWindow(QMainWindow):
             if not self.worker.wait(8000):
                 QMessageBox.warning(
                     self, "FreqKnife",
-                    "Masih memproses file. Tutup aplikasi lagi setelah selesai.")
+                    "Still processing. Close the app again once it finishes.")
                 event.ignore()
                 return
         event.accept()

@@ -54,6 +54,13 @@ jobs:
         # kedua binary benar-benar bisa dijalankan sebelum build dimulai.
         run: python build/get_ffmpeg.py --env >> "$GITHUB_ENV"
 
+      - name: Jalankan test
+        shell: bash
+        # Setelah langkah unduh, jadi FFMPEG_FF/FFMPEG_FP sudah terisi dan test
+        # audio_io memakai binary statis yang sama yang akan ikut terbundel.
+        # GUI test menyetel QT_QPA_PLATFORM=offscreen sendiri, jadi aman tanpa display.
+        run: python -m pytest
+
       - name: Build macOS
         if: runner.os == 'macOS'
         shell: bash
@@ -91,6 +98,18 @@ jobs:
             --add-binary "$FFMPEG_FP:." \
             main.py
 
+      - name: Sertakan lisensi ffmpeg
+        shell: bash
+        # Biner ffmpeg yang dibundel berlisensi GPLv3, jadi distribusinya wajib
+        # menyertakan teks lisensi. Di macOS masuk ke dalam bundle; di Windows
+        # dan Linux berkasnya berdampingan dengan executable.
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   cp build/LICENSE.GPLv3 dist/FreqKnife.app/Contents/Resources/ ;;
+            Windows) cp build/LICENSE.GPLv3 dist/ ;;
+            Linux)   cp build/LICENSE.GPLv3 dist/ ;;
+          esac
+
       - name: Selftest binary
         shell: bash
         run: |
@@ -103,5 +122,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.nama }}
-          path: dist/FreqKnife*
+          # LICENSE.GPLv3 hanya berdampingan executable di Windows/Linux; di
+          # macOS sudah berada di dalam .app sehingga ikut kena pola FreqKnife*
+          path: |
+            dist/FreqKnife*
+            dist/LICENSE.GPLv3
           if-no-files-found: error
