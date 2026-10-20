@@ -1335,9 +1335,9 @@ def test_batal_awal_kembalikan_keadaan_normal(app, jendela, tmp_path, monkeypatc
     jendela.worker.status.connect(jendela.batalkan)
     batas = time.time() + 60
     while jendela.worker.isRunning() and time.time() < batas:
-        jendela.app.processEvents()
+        app.processEvents()
         time.sleep(0.01)
-    jendela.app.processEvents()
+    app.processEvents()
 
     assert not jendela.worker.isRunning(), "job harus berhenti"
     assert jendela.btn_proses.isEnabled(), "tombol Proses harus pulih"
