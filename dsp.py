@@ -65,7 +65,8 @@ def iter_split(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRAM
     dengan pita banyak butuh waktu; naikkan frame bila perlu.
     """
     samples = np.asarray(samples, dtype=np.float32)
-    if samples.ndim == 1:
+    satu_dim = samples.ndim == 1
+    if satu_dim:
         samples = samples[:, None]
     total, channels = samples.shape
 
@@ -92,7 +93,8 @@ def iter_split(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRAM
         panjang = min(hop, total - keluar) if start else 0
         for i in range(len(masks)):
             if panjang:
-                yield i, acc[i][:panjang].copy()
+                potongan = acc[i][:panjang, 0] if satu_dim else acc[i][:panjang]
+                yield i, potongan.copy()
             acc[i][:hop] = acc[i][hop:]
             acc[i][hop:] = 0.0
 
