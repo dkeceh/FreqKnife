@@ -62,3 +62,40 @@ def test_mask_jumlah_pita_sama_dengan_permintaan():
 def test_mask_sampel_rendah_tidak_menghasilkan_pita_kosong():
     masks = dsp.band_masks(4096, 8000, 30)
     assert all(m.any() for m in masks)
+
+
+def _acak(n=16384, ch=2, seed=0):
+    rng = np.random.default_rng(seed)
+    return (rng.standard_normal((n, ch)) * 0.1).astype(np.float32)
+
+
+def test_rekonstruksi_stereo_sampai_presisi_float():
+    x = _acak()
+    bands = dsp.split_bands(x, 44100, 5)
+    assert len(bands) == 5
+    assert all(b.shape == x.shape for b in bands)
+    galat = float(np.abs(np.sum(bands, axis=0) - x).max())
+    assert galat < 1e-3, f"galat {galat}"
+
+
+def test_rekonstruksi_mono():
+    x = _acak(ch=1)[:, 0]
+    bands = dsp.split_bands(x, 44100, 3)
+    galat = float(np.abs(np.sum(bands, axis=0) - x).max())
+    assert galat < 1e-3
+
+
+def test_rekonstruksi_nol_dan_dua_pita():
+    for n in (2, 30):
+        x = _acak(seed=n)
+        bands = dsp.split_bands(x, 44100, n)
+        # jumlah bisa berkurang 1 bila dua cut jatuh ke bin FFT yang sama
+        assert len(bands) == len(dsp.band_masks(dsp.FRAME_DEFAULT, 44100, n))
+
+
+def test_rekonstruksi_preset_lain():
+    x = _acak(seed=7)
+    for preset in dsp.PRESET_NAMES:
+        bands = dsp.split_bands(x, 44100, 6, preset)
+        galat = float(np.abs(np.sum(bands, axis=0) - x).max())
+        assert galat < 1e-3, f"preset {preset}: {galat}"

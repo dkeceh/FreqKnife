@@ -54,3 +54,66 @@ def band_masks(n_fft, sample_rate, n_bands, preset=PRESET_NAMES[0]):
             mask[lo:hi] = True
             masks.append(mask)
     return masks
+
+
+def iter_split(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRAME_DEFAULT):
+    """Yield (indeks_pita, chunk float32) sambil jalan — memori tetap kecil.
+
+    Total chunk per pita tepat sama dengan panjang `samples`, sehingga stream
+    boleh ditulis apa adanya tanpa dipotong lagi di pemanggil.
+    shortcut: tiap frame menghasilkan n_bands chunk, jadi file sangat panjang
+    dengan pita banyak butuh waktu; naikkan frame bila perlu.
+    """
+    samples = np.asarray(samples, dtype=np.float32)
+    if samples.ndim == 1:
+        samples = samples[:, None]
+    total, channels = samples.shape
+
+    hop = frame // 2
+    window = np.hanning(frame + 1)[:-1].astype(np.float32)
+    masks = band_masks(frame, sample_rate, n_bands, preset)
+    acc = np.zeros((len(masks), frame, channels), dtype=np.float32)
+
+    # nol di depan supaya sampel pertama ikut dapat tumpang tindih penuh
+    padded = np.concatenate([
+        np.zeros((hop, channels), dtype=np.float32),
+        samples,
+        np.zeros((frame, channels), dtype=np.float32),
+    ])
+
+    keluar = 0
+    for start in range(0, len(padded) - frame + 1, hop):
+        spec = np.fft.rfft(padded[start:start + frame] * window[:, None], axis=0)
+        for i, mask in enumerate(masks):
+            acc[i] += np.fft.irfft(spec * mask[:, None], n=frame, axis=0).astype(np.float32)
+
+        # frame 0 hanya memuat nol depan: lepas tanpa diemit, karena itu
+        # bukan bagian sinyal asli
+        panjang = min(hop, total - keluar) if start else 0
+        for i in range(len(masks)):
+            if panjang:
+                yield i, acc[i][:panjang].copy()
+            acc[i][:hop] = acc[i][hop:]
+            acc[i][hop:] = 0.0
+
+        if start:
+            keluar += panjang
+            if keluar >= total:
+                return
+
+
+def split_bands(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRAME_DEFAULT):
+    """Ringkasan `iter_split` yang mengembalikan seluruh pita utuh. Untuk tes dan berkas pendek."""
+    samples = np.asarray(samples, dtype=np.float32)
+    satu_dim = samples.ndim == 1
+    if satu_dim:
+        samples = samples[:, None]
+    total = len(samples)
+
+    parts = []
+    for i, chunk in iter_split(samples, sample_rate, n_bands, preset, frame):
+        while len(parts) <= i:
+            parts.append([])
+        parts[i].append(chunk)
+    hasil = [np.concatenate(p)[:total] for p in parts]
+    return [b[:, 0] for b in hasil] if satu_dim else hasil
