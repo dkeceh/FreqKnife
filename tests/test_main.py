@@ -16,6 +16,16 @@ def test_ekstensi_audio_dikenali():
     assert ".txt" not in audio_io.AUDIO_EXTENSIONS
 
 
+def test_filter_dialog_pakai_wildcard():
+    """Qt butuh "*.wav"; tanpa bintang semua file nonaktif di dialog Pilih."""
+    from PySide6.QtCore import QDir
+    import audio_io
+    for e in audio_io.AUDIO_EXTENSIONS:
+        assert "*" + e in main.FILTER, e
+    assert QDir.match("*.wav", "lagu.wav")
+    assert not QDir.match(".wav", "lagu.wav")  # jebakan yang menghasilkan bug ini
+
+
 @pytest.fixture(scope="module")
 def app():
     # tanpa display: semua test jendela pakai platform offscreen
