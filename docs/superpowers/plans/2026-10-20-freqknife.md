@@ -2329,13 +2329,99 @@ menjadi:
 
 ```
   `ffmpeg` dan `ffprobe` ikut dibundel sebagai **build statis** yang diunduh
-  `build/get_ffmpeg.py` (macOS/Linux: ffmpeg.martin-riedl.de, Windows/Linux: BtbN/FFmpeg-Builds).
-  Binary dari brew/apt/choco TIDAK bisa dipakai: mereka bergantung puluhan
-  library dinamis yang hanya ada di mesin build, sehingga aplikasi gagal di
-  mesin lain sementara CI tetap hijau karena selftest berjalan di mesin yang sama.
+  `build/get_ffmpeg.py` (macOS: ffmpeg.martin-riedl.de; Windows dan Linux:
+  BtbN/FFmpeg-Builds). Binary dari brew/apt/choco TIDAK bisa dipakai: mereka
+  bergantung puluhan library dinamis yang hanya ada di mesin build, sehingga
+  aplikasi gagal di mesin lain sementara CI tetap hijau karena selftest berjalan
+  di mesin yang sama.
 ```
 
-- [ ] **Step 9: Commit lalu push (controller)**
+- [ ] **Step 9: Perbaikan hasil review**
+
+Empat temuan review, semuanya sebelum push:
+
+**(a) — Penting. Unduhan dingin gagal TLS di mesin build sendiri.**
+Kerangka Python 3.13 di `.venv` datang tanpa file CA (`etc/openssl/` kosong,
+`install_certificates.command` belum pernah dijalankan), sehingga
+`urlopen` melempar `CERTIFICATE_VERIFY_FAILED` — `bash build/build_mac.sh` gagal
+pada clone segar. Perbaiki sekali di titik yang butuh jaringan, bukan di tiga
+tempat. Di `requirements.txt` tambahkan:
+
+```
+certifi>=2024.2
+```
+
+Dan di `build/get_ffmpeg.py`, tepat **setelah blok import** (sebelum definisi
+fungsi mana pun — `os` sudah diimpor):
+
+```python
+# Kerangka Python tertentu datang tanpa file CA, jadi urlopen gagal
+# CERTIFICATE_VERIFY_FAILED padahal jaringan sehat. certifi menyiapkan toko
+# sertifikat portabel. Diimpor di sini, di awal modul, karena ssl hanya membaca
+# SSL_CERT_FILE saat konteks pertama dibuat.
+try:
+    import certifi
+
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+except ImportError:
+    pass  # tanpa certifi perilaku lama dipertahankan; requirements memasangnya
+```
+
+**(b) — Minor. `_cari` tidak punya kasus hanya-bersarang.** Regresi ke
+pencarian level-atas-akar lolos test tapi mematahkan Linux/Windows (BtbN menaruh
+binary di `<paket>/bin/`). Tambahkan di akhir
+`test_ekstrak_zip_akar_dan_tar_berlapis`:
+
+```python
+    # kasus hanya-bersarang: layout BtbN (Linux/Windows), akar tak punya binary
+    bersarang = tmp_path / "hanya-bersarang"
+    (bersarang / "paket" / "bin").mkdir(parents=True)
+    (bersarang / "paket" / "bin" / "ffmpeg").write_bytes(b"#sh")
+    assert get_ffmpeg._cari(bersarang, "ffmpeg") == bersarang / "paket" / "bin" / "ffmpeg"
+```
+
+**(c) — Minor. Test untuk perbaikan (a)** — test baru `test_build_tools.py`,
+jadi suite 63 → **64**:
+
+```python
+def test_modul_memastikan_sertifikat_ssl():
+    """Tanpa SSL_CERT_FILE, clone segar gagal di langkah unduh dengan TLS."""
+    import os
+
+    import pytest
+
+    pytest.importorskip("certifi")
+    assert os.environ.get("SSL_CERT_FILE"), (
+        "get_ffmpeg tidak menyiapkan SSL_CERT_FILE — unduhan dingin akan gagal "
+        "CERTIFICATE_VERIFY_FAILED pada kerangka Python tanpa file CA")
+```
+
+**(d) — Minor. Mode git `build/build_mac.sh` masih `100644`** (volume ini
+memakai `core.filemode=false`, jadi `chmod +x` lokal tak tercatat). Jalankan:
+
+```bash
+git update-index --chmod=+x build/build_mac.sh
+git ls-files -s build/build_mac.sh   # harus 100755
+```
+
+**(e) — Minor. Kalimat §10 yang sudah terlanjur di-commit menyesatkan.** Teks
+sekarang menyebut `macOS/Linux: ffmpeg.martin-riedl.de` padahal Linux dirutekan
+ke BtbN. Di `docs/superpowers/specs/2026-10-20-freqknife-design.md`, ganti
+`build/get_ffmpeg.py` (macOS/Linux: ffmpeg.martin-riedl.de, Windows/Linux: BtbN/FFmpeg-Builds).` dengan
+`build/get_ffmpeg.py` (macOS: ffmpeg.martin-riedl.de; Windows dan Linux: BtbN/FFmpeg-Builds).`
+Sisanya paragraf tetap.
+
+**Verifikasi setelah keempat perbaikan:**
+
+```bash
+. .venv/bin/activate
+pytest                                  # expect 64 lulus
+python build/get_ffmpeg.py              # exit 0, dua baris
+bash build/build_mac.sh                 # exit 0
+./dist/FreqKnife.app/Contents/MacOS/FreqKnife --selftest   # dua baris, exit 0
+```
+
+- [ ] **Step 10: Commit lalu push (controller)**
 
 ```bash
 git add .github/workflows/build.yml build/ tests/test_build_tools.py \
@@ -2353,7 +2439,7 @@ Kalau sebuah job gagal, baca log langkah "Unduh ffmpeg statis" lebih dulu —
 karena di situ kedua binary sudah dibuktikan bisa dijalankan sebelum PyInstaller
 dijalankan, jadi kegagalan sesudahnya pasti di sisi build, bukan di sumber.
 
-- [ ] **Step 10: Finalisasi**
+- [ ] **Step 11: Finalisasi**
 
 ```bash
 . .venv/bin/activate && pytest
