@@ -841,6 +841,27 @@ def test_auto_rename_menambah_suffix(tmp_path):
 def test_band_path_format():
     p = audio_io.band_path("/tmp", "lagu", 3, ".mp3")
     assert p.name == "lagu_band03.mp3"
+
+
+def test_komposisi_tidak_pernah_menimpa_file_ada(tmp_path):
+    """encode_raw punya -y dan menimpa; jaminan ada di pemanggil."""
+    sr, ch, n = 44100, 1, 1000
+    samples = (np.sin(2 * np.pi * 440 * np.arange(n) / sr) * 0.5).astype(np.float32)
+    raw = tmp_path / "pita.f32le"
+    raw.write_bytes(samples.tobytes())
+
+    sumber = tmp_path / "lagu.wav"
+    sumber.write_bytes(b"PENTING JANGAN DITIMPA")
+
+    tujuan = audio_io.available_path(audio_io.band_path(tmp_path, "lagu", 1, ".wav"))
+    assert tujuan.name == "lagu_band01.wav"
+    audio_io.encode_raw(raw, tujuan, sr, ch, audio_io.output_plan(".wav")[1])
+
+    assert sumber.read_bytes() == b"PENTING JANGAN DITIMPA"
+    # berkas hasil tetap ada dan berbeda dari yang sudah ada
+    kedua = audio_io.available_path(audio_io.band_path(tmp_path, "lagu", 1, ".wav"))
+    assert kedua.name == "lagu_band01_2.wav"
+    assert audio_io.probe(tujuan)["sample_rate"] == sr
 ```
 
 - [ ] **Step 2: Jalankan dan pastikan lulus**
@@ -849,7 +870,7 @@ def test_band_path_format():
 . .venv/bin/activate && pytest tests/test_audio_io.py
 ```
 
-Expected: 19 passed. Kalau `test_format_keluaran_mengikuti_input` gagal, perbaiki `CODEC_BY_EXT` / `output_plan` di `audio_io.py`.
+Expected: 21 passed (8 sebelumnya + 9 kasus parametrized + 3 + 1 komposisi). Kalau `test_format_keluaran_mengikuti_input` gagal, perbaiki `CODEC_BY_EXT` / `output_plan` di `audio_io.py`. Suite penuh harus 40 passed.
 
 - [ ] **Step 3: Commit**
 
@@ -872,7 +893,6 @@ git commit -m "feat: format keluaran mengikuti input dan auto-rename"
 
 ```python
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -929,6 +949,19 @@ def test_folder_tujuan_dibuat_bila_belum_ada(tmp_path):
     assert all(p.exists() for p in hasil)
 
 
+def test_file_band_yang_sudah_ada_tidak_pernah_ditimpa(tmp_path):
+    """Jaminan \"file user tidak pernah hilang\" ada di pemanggil, bukan di ffmpeg."""
+    src = _buat_sumber(tmp_path, detik=1.0)
+    lama = tmp_path / "lagu_band01.wav"
+    lama.write_bytes(b"PUNYA USER JANGAN DITIMPA")
+
+    hasil = worker.process_file(src, tmp_path, 3, "Rata (log)")
+
+    assert lama.read_bytes() == b"PUNYA USER JANGAN DITIMPA"
+    assert [p.name for p in hasil] == [
+        "lagu_band01_2.wav", "lagu_band02.wav", "lagu_band03.wav"]
+
+
 def test_cancel_menghentikan_dan_melempar_jobcancelled(tmp_path):
     src = _buat_sumber(tmp_path, detik=3.0)
     dipanggil = []
@@ -983,7 +1016,6 @@ Expected: FAIL `ModuleNotFoundError: No module named 'worker'`.
 """Orkestrasi pemisahan. `process_file` murni Python — bisa dites tanpa Qt."""
 
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -1057,8 +1089,10 @@ def process_file(source, dest_dir, n_bands, preset,
             cek()
             on_status(f"Encoding band{i + 1:02d}{ext}")
             target = audio_io.available_path(audio_io.band_path(dest_dir, source.stem, i + 1, ext))
-            audio_io.encode_raw(raw_out[i], target, sr, channels, codec)
+            # dicatat SEBELUM encode: encode gagal di tengah meninggalkan file
+            # parsial, dan file itu harus ikut terhapus saat batal/gagal
             written.append(target)
+            audio_io.encode_raw(raw_out[i], target, sr, channels, codec)
             hasil.append(target)
             on_progress(30 + int(70 * (i + 1) / n_out))
 
@@ -1076,7 +1110,7 @@ def process_file(source, dest_dir, n_bands, preset,
 . .venv/bin/activate && pytest tests/test_worker.py
 ```
 
-Expected: 7 passed.
+Expected: 8 passed. Suite penuh harus 48 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1180,7 +1214,7 @@ from PySide6.QtCore import QThread, Signal
 . .venv/bin/activate && pytest tests/test_worker.py
 ```
 
-Expected: 9 passed.
+Expected: 10 passed. Suite penuh harus 50 passed.
 
 - [ ] **Step 5: Commit**
 
