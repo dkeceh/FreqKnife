@@ -1,8 +1,10 @@
-"""Orkestrasi pemisahan. `process_file` murni Python — bisa dites tanpa Qt."""
+"""Orkestrasi pemisahan: `process_file` murni Python, `SplitWorker` pembungkus QThread tipis."""
 
 import shutil
 import tempfile
 from pathlib import Path
+
+from PySide6.QtCore import QThread, Signal
 
 import audio_io
 import dsp
@@ -88,3 +90,42 @@ def process_file(source, dest_dir, n_bands, preset,
     finally:
         del samples
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def friendly_error(exc):
+    """Pesan yang aman ditampilkan ke user."""
+    return str(exc).strip() or exc.__class__.__name__
+
+
+class SplitWorker(QThread):
+    progress = Signal(int)
+    status = Signal(str)
+    finished_ok = Signal(list)
+    failed = Signal(str)
+    cancelled = Signal(list)
+
+    def __init__(self, source, dest_dir, n_bands, preset, parent=None):
+        super().__init__(parent)
+        self.source, self.dest_dir = source, dest_dir
+        self.n_bands, self.preset = n_bands, preset
+        self._cancel = False
+        self.written = []
+
+    def cancel(self):
+        self._cancel = True
+
+    def run(self):
+        try:
+            hasil = process_file(
+                self.source, self.dest_dir, self.n_bands, self.preset,
+                on_progress=self.progress.emit,
+                on_status=self.status.emit,
+                is_cancelled=lambda: self._cancel,
+                written=self.written,
+            )
+        except JobCancelled:
+            self.cancelled.emit(self.written)
+        except Exception as exc:
+            self.failed.emit(friendly_error(exc))
+        else:
+            self.finished_ok.emit(hasil)

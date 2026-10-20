@@ -139,3 +139,17 @@ def test_encode_gagal_dicatat_untuk_dibersihkan(tmp_path, monkeypatch):
     assert len(ditulis) == 1
     assert ditulis[0].name == "lagu_band01.wav"
     assert ditulis[0].exists()
+
+
+def test_split_worker_punya_sinyal_yang_dibutuhkan_ui():
+    for nama in ("progress", "status", "finished_ok", "failed", "cancelled"):
+        assert hasattr(worker.SplitWorker, nama), nama
+    assert hasattr(worker.SplitWorker, "cancel")
+
+
+def test_split_worker_bisa_dibuat_tanpa_qapp():
+    w = worker.SplitWorker("a.wav", "/tmp", 5, "Rata (log)")
+    assert w.n_bands == 5
+    assert not w._cancel
+    w.cancel()
+    assert w._cancel
