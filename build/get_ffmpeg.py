@@ -22,6 +22,17 @@ import zipfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+# Kerangka Python tertentu datang tanpa file CA, jadi urlopen gagal
+# CERTIFICATE_VERIFY_FAILED padahal jaringan sehat. certifi menyiapkan toko
+# sertifikat portabel. Diimpor di sini, di awal modul, karena ssl hanya membaca
+# SSL_CERT_FILE saat konteks pertama dibuat.
+try:
+    import certifi
+
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+except ImportError:
+    pass  # tanpa certifi perilaku lama dipertahankan; requirements memasangnya
+
 AKAR = Path(__file__).resolve().parent.parent
 KELUAR = AKAR / "vendor" / "ffmpeg"
 BTBN = "BtbN/FFmpeg-Builds"

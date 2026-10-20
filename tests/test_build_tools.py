@@ -51,3 +51,21 @@ def test_ekstrak_zip_akar_dan_tar_berlapis(tmp_path):
     # yang paling dekat akar yang dipilih, bukan yang pertama ditemukan acak
     assert ff == tujuan / "ffmpeg"
     assert fp == tujuan / "ffprobe"
+
+    # kasus hanya-bersarang: layout BtbN (Linux/Windows), akar tak punya binary
+    bersarang = tmp_path / "hanya-bersarang"
+    (bersarang / "paket" / "bin").mkdir(parents=True)
+    (bersarang / "paket" / "bin" / "ffmpeg").write_bytes(b"#sh")
+    assert get_ffmpeg._cari(bersarang, "ffmpeg") == bersarang / "paket" / "bin" / "ffmpeg"
+
+
+def test_modul_memastikan_sertifikat_ssl():
+    """Tanpa SSL_CERT_FILE, clone segar gagal di langkah unduh dengan TLS."""
+    import os
+
+    import pytest
+
+    pytest.importorskip("certifi")
+    assert os.environ.get("SSL_CERT_FILE"), (
+        "get_ffmpeg tidak menyiapkan SSL_CERT_FILE — unduhan dingin akan gagal "
+        "CERTIFICATE_VERIFY_FAILED pada kerangka Python tanpa file CA")

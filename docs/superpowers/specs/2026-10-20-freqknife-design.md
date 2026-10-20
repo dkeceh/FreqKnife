@@ -229,7 +229,7 @@ wajib di CI karena butuh ffmpeg.
 
 - **PyInstaller**: `--onefile --windowed --icon=freqknife.icns`, bundle id
   `com.freqknife.app`, `ffmpeg` dan `ffprobe` ikut dibundel sebagai **build statis** yang diunduh
-  `build/get_ffmpeg.py` (macOS/Linux: ffmpeg.martin-riedl.de, Windows/Linux: BtbN/FFmpeg-Builds).
+  `build/get_ffmpeg.py` (macOS: ffmpeg.martin-riedl.de; Windows dan Linux: BtbN/FFmpeg-Builds).
   Binary dari brew/apt/choco TIDAK bisa dipakai: mereka bergantung puluhan
   library dinamis yang hanya ada di mesin build, sehingga aplikasi gagal di
   mesin lain sementara CI tetap hijau karena selftest berjalan di mesin yang sama.
