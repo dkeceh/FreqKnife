@@ -60,3 +60,23 @@ def test_file_rusak_melempar_error(tmp_path):
 
 def test_ffmpeg_missing_tidak_pernah_error():
     assert isinstance(audio_io.ffmpeg_missing(), bool)
+
+
+def test_ffmpeg_missing_menghormati_resolusi_alat(monkeypatch):
+    """Bundel PyInstaller: binary ada tapi tidak ada di PATH."""
+    import shutil as _sh
+
+    asli_ffmpeg = _sh.which("ffmpeg")
+    asli_ffprobe = _sh.which("ffprobe")
+    assert asli_ffmpeg and asli_ffprobe, "tes ini butuh ffmpeg asli di PATH"
+
+    # mode bundel: PATH kosong, _alat menemukan binary
+    monkeypatch.setattr(audio_io.shutil, "which", lambda *a, **k: None)
+    monkeypatch.setattr(audio_io, "_alat",
+                        lambda nama: asli_ffmpeg if nama == "ffmpeg" else asli_ffprobe)
+    assert audio_io.ffmpeg_missing() is False
+
+    # binary hilang sama sekali
+    monkeypatch.setattr(audio_io, "_alat",
+                        lambda nama: f"/tmp/tidak-ada-{nama}")
+    assert audio_io.ffmpeg_missing() is True

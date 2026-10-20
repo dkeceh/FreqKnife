@@ -52,7 +52,10 @@ def ffprobe_path():
 
 
 def ffmpeg_missing():
-    return shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None
+    return any(
+        not (shutil.which(kandidat) or Path(kandidat).exists())
+        for kandidat in (_alat("ffmpeg"), _alat("ffprobe"))
+    )
 
 
 def probe(path):
