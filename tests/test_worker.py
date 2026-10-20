@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -117,3 +118,24 @@ def test_batal_tidak_meninggalkan_folder_tujuan(tmp_path):
                             is_cancelled=lambda: len(panggilan) > 3)
 
     assert not tujuan.exists()
+
+
+def test_encode_gagal_dicatat_untuk_dibersihkan(tmp_path, monkeypatch):
+    """Encode yang gagal di tengah meninggalkan file parsial — harus tercatat."""
+    src = _buat_sumber(tmp_path, detik=0.5)
+    ditulis = []
+
+    def setengah_jalan(raw_path, out_path, *args, **kwargs):
+        # simulasi ffmpeg meninggalkan file parsial lalu mati
+        Path(out_path).write_bytes(b"RIFFparsial")
+        raise RuntimeError("ffmpeg gagal encode (simulasi)")
+
+    monkeypatch.setattr(audio_io, "encode_raw", setengah_jalan)
+
+    with pytest.raises(RuntimeError):
+        worker.process_file(src, tmp_path, 3, "Rata (log)", written=ditulis)
+
+    # band pertama gagal → targetnya harus sudah tercatat, siap dihapus pemanggil
+    assert len(ditulis) == 1
+    assert ditulis[0].name == "lagu_band01.wav"
+    assert ditulis[0].exists()
