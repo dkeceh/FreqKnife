@@ -80,3 +80,33 @@ def test_ffmpeg_missing_menghormati_resolusi_alat(monkeypatch):
     monkeypatch.setattr(audio_io, "_alat",
                         lambda nama: f"/tmp/tidak-ada-{nama}")
     assert audio_io.ffmpeg_missing() is True
+
+
+def test_alat_menemukan_binary_berekstensi_exe_di_bundel(tmp_path, monkeypatch):
+    import types
+
+    # pakai stand-in modul sys: hanya sys._MEIPASS yang dibaca _alat,
+    # jadi global sys tidak perlu disentuh sama sekali
+    def set_bundel(path):
+        monkeypatch.setattr(
+            audio_io, "sys", types.SimpleNamespace(_MEIPASS=str(path)))
+
+    bundel_exe = tmp_path / "bundle_exe"
+    bundel_exe.mkdir()
+    exe = bundel_exe / "ffmpeg.exe"
+    exe.write_bytes(b"#!/bin/sh\nexit 0\n")
+    set_bundel(bundel_exe)
+    assert audio_io._alat("ffmpeg") == str(exe)
+
+    bundel_plt = tmp_path / "bundle_plt"
+    bundel_plt.mkdir()
+    polos = bundel_plt / "ffmpeg"
+    polos.write_bytes(b"#!/bin/sh\nexit 0\n")
+    set_bundel(bundel_plt)
+    assert audio_io._alat("ffmpeg") == str(polos)
+
+    bundel_kosong = tmp_path / "bundle_kosong"
+    bundel_kosong.mkdir()
+    set_bundel(bundel_kosong)
+    hasil = audio_io._alat("ffmpeg")
+    assert not hasil.startswith(str(bundel_kosong))

@@ -37,9 +37,10 @@ def _alat(nama):
         return env
     bundel = getattr(sys, "_MEIPASS", None)
     if bundel:
-        kandidat = Path(bundel) / nama
-        if kandidat.exists():
-            return str(kandidat)
+        # Windows: binary dibundel berekstensi .exe
+        for kandidat in (Path(bundel) / nama, Path(bundel) / (nama + ".exe")):
+            if kandidat.exists():
+                return str(kandidat)
     return shutil.which(nama) or nama
 
 
