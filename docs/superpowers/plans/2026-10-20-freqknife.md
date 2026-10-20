@@ -340,7 +340,8 @@ def test_rekonstruksi_nol_dan_dua_pita():
     for n in (2, 30):
         x = _acak(seed=n)
         bands = dsp.split_bands(x, 44100, n)
-        assert len(bands) == n
+        # jumlah bisa berkurang 1 bila dua cut jatuh ke bin FFT yang sama
+        assert len(bands) == len(dsp.band_masks(dsp.FRAME_DEFAULT, 44100, n))
         galat = float(np.abs(np.sum(bands, axis=0) - x).max())
         assert galat < 1e-3
 
@@ -369,12 +370,14 @@ Tambahkan di akhir `dsp.py`:
 def iter_split(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRAME_DEFAULT):
     """Yield (indeks_pita, chunk float32) sambil jalan — memori tetap kecil.
 
-    Chunk belum dipotong ke panjang sinyal; pemanggil memotong sendiri.
+    Total chunk per pita tepat sama dengan panjang `samples`, sehingga stream
+    boleh ditulis apa adanya tanpa dipotong lagi di pemanggil.
     shortcut: tiap frame menghasilkan n_bands chunk, jadi file sangat panjang
     dengan pita banyak butuh waktu; naikkan frame bila perlu.
     """
     samples = np.asarray(samples, dtype=np.float32)
-    if samples.ndim == 1:
+    satu_dim = samples.ndim == 1
+    if satu_dim:
         samples = samples[:, None]
     total, channels = samples.shape
 
@@ -390,22 +393,34 @@ def iter_split(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRAM
         np.zeros((frame, channels), dtype=np.float32),
     ])
 
+    keluar = 0
     for start in range(0, len(padded) - frame + 1, hop):
         spec = np.fft.rfft(padded[start:start + frame] * window[:, None], axis=0)
         for i, mask in enumerate(masks):
             acc[i] += np.fft.irfft(spec * mask[:, None], n=frame, axis=0).astype(np.float32)
-            yield i, acc[i][:hop].copy()
+
+        # frame 0 hanya memuat nol depan: lepas tanpa diemit, karena itu
+        # bukan bagian sinyal asli
+        panjang = min(hop, total - keluar) if start else 0
+        for i in range(len(masks)):
+            if panjang:
+                # selalu .copy(): acc dipindah tepat setelah yield ini
+                potongan = acc[i][:panjang, 0] if satu_dim else acc[i][:panjang]
+                yield i, potongan.copy()
             acc[i][:hop] = acc[i][hop:]
             acc[i][hop:] = 0.0
 
-    for i in range(len(masks)):
-        yield i, acc[i][:hop].copy()
+        if start:
+            keluar += panjang
+            if keluar >= total:
+                return
 
 
 def split_bands(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRAME_DEFAULT):
     """Ringkasan `iter_split` yang mengembalikan seluruh pita utuh. Untuk tes dan berkas pendek."""
     samples = np.asarray(samples, dtype=np.float32)
-    if samples.ndim == 1:
+    satu_dim = samples.ndim == 1
+    if satu_dim:
         samples = samples[:, None]
     total = len(samples)
 
@@ -414,7 +429,8 @@ def split_bands(samples, sample_rate, n_bands, preset=PRESET_NAMES[0], frame=FRA
         while len(parts) <= i:
             parts.append([])
         parts[i].append(chunk)
-    return [np.concatenate(p)[:total] for p in parts]
+    hasil = [np.concatenate(p)[:total] for p in parts]
+    return [b[:, 0] for b in hasil] if satu_dim else hasil
 ```
 
 - [ ] **Step 4: Jalankan, pastikan lulus**
@@ -482,15 +498,22 @@ def test_kanan_dan_kiri_tidak_tercampur():
     for b in bands:
         assert b.shape[1] == 2
         assert b.dtype == np.float32
-    # 300 Hz ada di kiri saja, 5000 Hz di kanan saja
-    low = bands[0]
+    # pilih pita berdasarkan titik cut, bukan asumsi indeks
+    cuts = dsp.compute_cutoffs(sr, 5)
+    low = bands[int(np.searchsorted(cuts, 300.0))]
     assert _energi(low[:, 0]) > _energi(low[:, 1]) * 10
+    high = bands[int(np.searchsorted(cuts, 5000.0))]
+    assert _energi(high[:, 1]) > _energi(high[:, 0]) * 10
 
 
 def test_masukan_1d_menghasilkan_1d():
     x = np.zeros(8192, dtype=np.float32)
     bands = dsp.split_bands(x, 44100, 4)
     assert all(b.ndim == 1 for b in bands)
+    # iter_split juga harus 1-D, bukan (n, 1)
+    for _, chunk in dsp.iter_split(x, 44100, 4):
+        assert chunk.ndim == 1
+        assert chunk.dtype == np.float32
 
 
 def test_iter_split_menghasilkan_seluruh_sampel():
@@ -498,13 +521,18 @@ def test_iter_split_menghasilkan_seluruh_sampel():
     terkumpul = [0] * 5
     for i, chunk in dsp.iter_split(x, 44100, 5):
         terkumpul[i] += len(chunk)
-    assert all(n >= len(x) for n in terkumpul)
+        # bentuk chunk harus mengikuti masukan (stereo = 2-D) dan selalu float32
+        assert chunk.ndim == 2 and chunk.dtype == np.float32
+    # persis sepanjang sinyal — worker menulis stream ini tanpa memotong.
+    # Diukur langsung dari iter_split, bukan split_bands, supaya truncation
+    # [:total] di split_bands tidak bisa menyembunyikan bug kelebihan-emit.
+    assert terkumpul == [len(x)] * 5
 
 
 def test_split_pada_sample_rate_8000_tetap_jalan():
     x = _acak(n=8192, ch=1, seed=11)
     bands = dsp.split_bands(x, 8000, 30)
-    assert len(bands) == 30
+    assert len(bands) == len(dsp.band_masks(dsp.FRAME_DEFAULT, 8000, 30))
     galat = float(np.abs(np.sum(bands, axis=0) - x).max())
     assert galat < 1e-3
 ```
@@ -515,7 +543,7 @@ def test_split_pada_sample_rate_8000_tetap_jalan():
 . .venv/bin/activate && pytest tests/test_dsp.py -v
 ```
 
-Expected: 19 passed. Kalau `test_nada_hanya_muncul_di_pita_yang_memuatnya` gagal karena pembulatan bin, perbaiki **hanya** di `band_masks` (geser `searchsorted` ke bawah dengan `side="right"`), jangan longgarkan ambang tes.
+Expected: 19 passed. Kalau `test_nada_hanya_muncul_di_pita_yang_memuatnya` gagal, **jangan longgarkan ambang tes**. Ukur dulu penyebabnya: kalau 100 Hz kebetulan jatuh persis di bin batas pita (jaraknya < 1 bin ≈ 10.8 Hz dari cut), geser pembulatan di `band_masks` — itu perbaikan nyata. Kalau penyebabnya kebocoran spektrum, laporkan NEEDS_CONTEXT beserta angkanya, jangan menebak.
 
 - [ ] **Step 3: Commit**
 
@@ -1809,5 +1837,6 @@ Expected: semua test lulus, working tree bersih.
 
 **Konsistensi tipe** — `compute_cutoffs(sample_rate, n_bands, preset)`, `band_masks(n_fft, sample_rate, n_bands, preset)`, `iter_split(samples, sample_rate, n_bands, preset, frame)`, `process_file(source, dest_dir, n_bands, preset, ...)`, `SplitWorker(source, dest_dir, n_bands, preset, parent)`, `band_path(dest_dir, stem, index, ext)` — dipakai konsisten di seluruh task.
 
-**Satu hal yang perlu diketahui pengerja:**
-`test_folder_temp_dibersihkan` memakai `monkeypatch.setattr(tempfile, "tempdir", ...)` — kalau gagal karena `mkdtemp` membaca `tempdir` sebelum patch, ganti dengan membandingkan `Path(tempfile.gettempdir())` sebelum/sesudah dan pastikan tidak ada direktori `freqknife-*` yang tersisa.
+**Dua hal yang perlu diketahui pengerja:**
+1. Dedup bin bisa mengurangi jumlah pita: `band_masks(4096, 44100, 30)` mengembalikan 29 mask, bukan 30 (cut ±25 Hz dan ±31 Hz jatuh ke bin yang sama). Itu perilaku yang benar — jangan dipaksa agar jumlahnya persis. Pemanggil selalu baca `len(band_masks(...))`, bukan asumsikan `n_bands`. `worker.process_file` sudah memberi tahu UI bila jumlahnya berkurang.
+2. `test_folder_temp_dibersihkan` memakai `monkeypatch.setattr(tempfile, "tempdir", ...)` — kalau gagal karena `mkdtemp` membaca `tempdir` sebelum patch, ganti dengan membandingkan `Path(tempfile.gettempdir())` sebelum/sesudah dan pastikan tidak ada direktori `freqknife-*` yang tersisa.
