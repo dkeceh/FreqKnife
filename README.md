@@ -120,3 +120,20 @@ build/           make_icons.py, get_ffmpeg.py, build_mac.sh
 tests/           64 test
 docs/            spesifikasi dan rencana implementasi
 ```
+
+## Lisensi
+
+Kode sumber FreqKnife memakai [MIT](LICENSE).
+
+**Perhatian — biner yang dibundel berlisensi lain.** `ffmpeg`/`ffprobe` yang
+ikut terbungkus adalah build statis GPLv3 (konfigurasinya memuat
+`--enable-gpl --enable-version3 --enable-libx264 --enable-libx265`). Ini karya
+terpisah: aplikasi memanggilnya lewat subprocess, jadi lisensi MIT tetap berlaku
+pada kode sumber FreqKnife dan tidak menular ke sana.
+
+Tapi **mendistribusikan artefak FreqKnife berarti ikut mendistribusikan perangkat
+lunak GPLv3**, sehingga wajib memenuhi syaratnya — minimal menyertakan teks
+lisensi GPL dan menautkan kode sumber ffmpeg:
+
+- https://www.martin-riedl.de/ffmpeg/ (macOS)
+- https://github.com/BtbN/FFmpeg-Builds (Linux, Windows)
