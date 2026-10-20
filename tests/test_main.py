@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 
@@ -41,15 +42,20 @@ def jendela(app):
 
 
 def test_tujuan_otomatis_dari_sumber_lalu_terkunci(jendela):
-    jendela.set_sumber("/tmp/lagu.mp3")
-    assert jendela.tujuan.text() == "/tmp"
+    # jalur dibangun lewat Path agar sesuai platform; di Windows Path("/tmp")
+    # menjadi "\tmp", jadi string literal gaya POSIX akan gagal di sana
+    sumber = Path("/tmp/lagu.mp3")
+    jendela.set_sumber(str(sumber))
+    assert jendela.tujuan.text() == str(sumber.parent)
 
     # user mengunci tujuan secara manual (tanpa membuka dialog)
     jendela.dest_manual = True
-    jendela.tujuan.setText("/tmp/lain")
-    jendela.set_sumber("/tmp/lagu2.mp3")
-    assert jendela.tujuan.text() == "/tmp/lain", "tujuan manual harus bertahan"
-    assert jendela.sumber.text() == "/tmp/lagu2.mp3"
+    tujuan_manual = str(Path("/tmp/lain"))
+    jendela.tujuan.setText(tujuan_manual)
+    sumber2 = Path("/tmp/lagu2.mp3")
+    jendela.set_sumber(str(sumber2))
+    assert jendela.tujuan.text() == tujuan_manual, "tujuan manual harus bertahan"
+    assert jendela.sumber.text() == str(sumber2)
 
 
 def test_slider_dan_spin_sinkron(jendela):
