@@ -1678,9 +1678,9 @@ git commit -m "feat: jendela utama dengan drag-drop, progress, dan cancel"
 ### Task 11: Icon
 
 **Files:**
-- Create: `assets/icon.svg` (sumber, dokumentasi)
 - Create: `build/make_icons.py`
-- Generate: `assets/icon.icns`, `assets/icon.ico`, `assets/icon.png`, `assets/icon_512.png`
+- Generate + commit: `assets/icon.icns`, `assets/icon.ico`, `assets/icon.png`, `assets/icon_512.png`, `assets/icon_{16,32,64,128,256}.png`
+- Test: `tests/test_assets.py`
 
 - [ ] **Step 1: Tulis generator icon**
 
@@ -1689,6 +1689,7 @@ git commit -m "feat: jendela utama dengan drag-drop, progress, dan cancel"
 ```python
 """Gambar icon FreqKnife: pisau memotong gelombang, lalu ekspor PNG/ICO/ICNS."""
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -1740,16 +1741,17 @@ def utama():
 
     iconset = ASET / "icon.iconset"
     if iconset.exists():
-        import shutil
         shutil.rmtree(iconset)
     iconset.mkdir()
 
     for n in ukuran_png:
         img = gambar(n)
         img.save(ASET / f"icon_{n}.png")
-        if n in (16, 32, 128, 256, 512):
+        if n in (16, 32, 128, 256):
             img.save(iconset / f"icon_{n}x{n}.png")
-            img.save(iconset / f"icon_{2 * n}x{2 * n}@2x.png") if n <= 256 else None
+            img.save(iconset / f"icon_{2 * n}x{2 * n}@2x.png")
+        elif n == 512:
+            img.save(iconset / "icon_512x512.png")
 
     gambar(256).save(ASET / "icon.png")
     gambar(512).save(ASET / "icon_512.png")
@@ -1759,8 +1761,17 @@ def utama():
     if sys.platform == "darwin":
         subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(ASET / "icon.icns")],
                        check=True)
-        import shutil
         shutil.rmtree(iconset)
+
+    # verifikasi sendiri: setiap aset yang dijanjikan harus ada dan bisa dibuka
+    wajib = ["icon.icns", "icon.ico", "icon.png", "icon_512.png"]
+    wajib += [f"icon_{n}.png" for n in ukuran_png]
+    for nama in wajib:
+        p = ASET / nama
+        assert p.exists() and p.stat().st_size > 0, f"aset hilang: {nama}"
+    for nama, ukuran in [("icon.png", 256), ("icon_512.png", 512)]:
+        with Image.open(ASET / nama) as cek:
+            assert cek.size == (ukuran, ukuran), f"{nama} ukuran {cek.size}, bukan {ukuran}"
 
     print("icon siap:", ", ".join(sorted(p.name for p in ASET.iterdir())))
 
@@ -1776,12 +1787,51 @@ if __name__ == "__main__":
 ls -la assets/
 ```
 
-Expected: `icon.icns`, `icon.ico`, `icon.png`, `icon_512.png`, dan PNG berbagai ukuran. Buka `assets/icon_256.png` untuk memastikan gambarnya masuk akal — kalau berantakan, ubah koordinat di `gambar()` lalu jalankan ulang.
+Expected: `icon.icns`, `icon.ico`, `icon.png`, `icon_512.png`, dan PNG berbagai ukuran. Generator memverifikasi dirinya sendiri (keberadaan + ukuran) dan akan AssertionError kalau ada yang kurang. Buka `assets/icon_256.png` untuk memastikan gambarnya masuk akal — kalau berantakan, ubah koordinat di `gambar()` lalu jalankan ulang.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Tulis test aset**
+
+`tests/test_assets.py`:
+
+```python
+"""Aset ikut di-commit; kalau hilang/rusak, build terbungkus gagal diam-diam."""
+
+from pathlib import Path
+
+from PIL import Image
+
+import main
+
+AKAR = Path(main.__file__).resolve().parent
+
+
+def test_aset_ikon_ada_dan_valid():
+    aset = AKAR / "assets"
+    for nama, ukuran in [("icon.icns", None), ("icon.ico", None),
+                         ("icon.png", 256), ("icon_512.png", 512)]:
+        p = aset / nama
+        assert p.exists(), f"{nama} belum dibuat — jalankan build/make_icons.py"
+        assert p.stat().st_size > 0, f"{nama} kosong"
+        if ukuran:
+            with Image.open(p) as img:
+                assert img.size == (ukuran, ukuran), f"{nama} = {img.size}"
+
+
+def test_jendela_memuat_ikon_bila_ada():
+    # main.py harus menahan diri saat assets/ belum ada, bukan crash
+    assert main.ICON.name in ("icon.icns", "icon.png")
+```
+
+- [ ] **Step 4: Jalankan semua test, lalu commit**
 
 ```bash
-git add build/make_icons.py assets/
+. .venv/bin/activate && pytest
+```
+
+Expected: 61 passed.
+
+```bash
+git add build/make_icons.py tests/test_assets.py assets/
 git commit -m "feat: icon FreqKnife (pisau memotong gelombang)"
 ```
 
