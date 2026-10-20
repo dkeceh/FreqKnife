@@ -2,7 +2,10 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-build/
+# PyInstaller menulis intermediat ke build/, tapi skrip sumber kita juga di sana
+build/*
+!build/make_icons.py
+!build/build_mac.sh
 dist/
 *.spec.bak
 .pytest_cache/
