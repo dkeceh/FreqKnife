@@ -37,7 +37,11 @@ def compute_cutoffs(sample_rate, n_bands, preset=PRESET_NAMES[0]):
 
 
 def band_masks(n_fft, sample_rate, n_bands, preset=PRESET_NAMES[0]):
-    """Daftar mask boolean rfft, saling bertetangga dan meliputi seluruh bin."""
+    """Daftar mask boolean rfft, saling bertetangga dan meliputi seluruh bin.
+
+    Jumlah mask bisa kurang dari `n_bands` bila dua cut jatuh ke bin FFT yang
+    sama; pemanggil harus membaca `len(...)` hasil fungsi ini.
+    """
     freqs = np.fft.rfftfreq(n_fft, 1.0 / sample_rate)
     cuts = compute_cutoffs(sample_rate, n_bands, preset)
     edges = sorted({0, len(freqs)} | {int(np.searchsorted(freqs, f)) for f in cuts})
