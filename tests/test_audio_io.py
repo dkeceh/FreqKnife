@@ -110,3 +110,62 @@ def test_alat_menemukan_binary_berekstensi_exe_di_bundel(tmp_path, monkeypatch):
     set_bundel(bundel_kosong)
     hasil = audio_io._alat("ffmpeg")
     assert not hasil.startswith(str(bundel_kosong))
+
+
+@pytest.mark.parametrize("source_ext,expected_ext", [
+    (".mp3", ".mp3"), (".MP3", ".mp3"), (".flac", ".flac"),
+    (".m4a", ".m4a"), (".wav", ".wav"), (".aiff", ".aiff"),
+    (".wma", ".wav"), (".xyz", ".wav"), ("", ".wav"),
+])
+def test_format_keluaran_mengikuti_input(source_ext, expected_ext):
+    ext, codec = audio_io.output_plan(source_ext)
+    assert ext == expected_ext
+    assert codec and codec[0] == "-c:a"
+
+
+def test_encode_raw_menghasilkan_file_bisa_dibuka(tmp_path):
+    sr, ch, detik = 44100, 2, 0.5
+    n = int(sr * detik)
+    samples = (np.sin(2 * np.pi * 440 * np.arange(n) / sr) * 0.5).astype(np.float32)
+    raw = tmp_path / "pita.f32le"
+    raw.write_bytes(np.repeat(samples[:, None], ch, axis=1).tobytes())
+
+    out = audio_io.encode_raw(raw, tmp_path / "pita.mp3", sr, ch,
+                              audio_io.output_plan(".mp3")[1])
+    assert out.exists() and out.stat().st_size > 1000
+    assert audio_io.probe(out)["sample_rate"] == sr
+
+
+def test_auto_rename_menambah_suffix(tmp_path):
+    pertama = tmp_path / "lagu_band01.mp3"
+    pertama.write_bytes(b"x")
+    kedua = audio_io.available_path(pertama)
+    assert kedua.name == "lagu_band01_2.mp3"
+    kedua.write_bytes(b"x")
+    assert audio_io.available_path(pertama).name == "lagu_band01_3.mp3"
+
+
+def test_band_path_format():
+    p = audio_io.band_path("/tmp", "lagu", 3, ".mp3")
+    assert p.name == "lagu_band03.mp3"
+
+
+def test_komposisi_tidak_pernah_menimpa_file_ada(tmp_path):
+    """encode_raw punya -y dan menimpa; jaminan ada di pemanggil."""
+    sr, ch, n = 44100, 1, 1000
+    samples = (np.sin(2 * np.pi * 440 * np.arange(n) / sr) * 0.5).astype(np.float32)
+    raw = tmp_path / "pita.f32le"
+    raw.write_bytes(samples.tobytes())
+
+    sumber = tmp_path / "lagu.wav"
+    sumber.write_bytes(b"PENTING JANGAN DITIMPA")
+
+    tujuan = audio_io.available_path(audio_io.band_path(tmp_path, "lagu", 1, ".wav"))
+    assert tujuan.name == "lagu_band01.wav"
+    audio_io.encode_raw(raw, tujuan, sr, ch, audio_io.output_plan(".wav")[1])
+
+    assert sumber.read_bytes() == b"PENTING JANGAN DITIMPA"
+    # berkas hasil tetap ada dan berbeda dari yang sudah ada
+    kedua = audio_io.available_path(audio_io.band_path(tmp_path, "lagu", 1, ".wav"))
+    assert kedua.name == "lagu_band01_2.wav"
+    assert audio_io.probe(tujuan)["sample_rate"] == sr
