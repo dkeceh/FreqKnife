@@ -44,3 +44,21 @@ def test_sample_rate_rendah_tidak_melebihi_nyquist():
 
 def test_preset_tidak_dikenal_jatuh_ke_rata():
     assert dsp.compute_cutoffs(44100, 5, "ngawur") == dsp.compute_cutoffs(44100, 5)
+
+
+def test_mask_saling_melengkapi_tanpa_celah_dan_tumpang_tindih():
+    for n in (2, 5, 30):
+        masks = dsp.band_masks(4096, 44100, n)
+        total = np.sum(np.stack(masks), axis=0)
+        assert np.all(total == 1), "setiap bin harus jatuh tepat satu pita"
+        assert all(m.dtype == bool for m in masks)
+
+
+def test_mask_jumlah_pita_sama_dengan_permintaan():
+    assert len(dsp.band_masks(4096, 44100, 5)) == 5
+    assert len(dsp.band_masks(4096, 44100, 2)) == 2
+
+
+def test_mask_sampel_rendah_tidak_menghasilkan_pita_kosong():
+    masks = dsp.band_masks(4096, 8000, 30)
+    assert all(m.any() for m in masks)

@@ -34,3 +34,19 @@ def compute_cutoffs(sample_rate, n_bands, preset=PRESET_NAMES[0]):
     fmax = max_frequency(sample_rate)
     t = np.arange(1, n_bands, dtype=float) / n_bands
     return [float(F_MIN * (fmax / F_MIN) ** (ti ** p)) for ti in t]
+
+
+def band_masks(n_fft, sample_rate, n_bands, preset=PRESET_NAMES[0]):
+    """Daftar mask boolean rfft, saling bertetangga dan meliputi seluruh bin."""
+    freqs = np.fft.rfftfreq(n_fft, 1.0 / sample_rate)
+    cuts = compute_cutoffs(sample_rate, n_bands, preset)
+    edges = sorted({0, len(freqs)} | {int(np.searchsorted(freqs, f)) for f in cuts})
+    edges[0], edges[-1] = 0, len(freqs)
+
+    masks = []
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        if hi > lo:
+            mask = np.zeros(len(freqs), dtype=bool)
+            mask[lo:hi] = True
+            masks.append(mask)
+    return masks
