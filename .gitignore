@@ -7,7 +7,9 @@ build/*
 !build/make_icons.py
 !build/build_mac.sh
 dist/
-*.spec.bak
+vendor/
+# pyinstaller menulis FreqKnife.spec di root setiap build
+*.spec
 .pytest_cache/
 .DS_Store
 ._*

@@ -1849,11 +1849,234 @@ git commit -m "feat: icon FreqKnife (pisau memotong gelombang)"
 ### Task 12: Build Mac dan GitHub Actions
 
 **Files:**
+- Create: `build/get_ffmpeg.py` (pengunduh ffmpeg+ffprobe statis)
 - Create: `build/build_mac.sh`
 - Create: `.github/workflows/build.yml`
-- Modify: `docs/superpowers/specs/2026-10-20-freqknife-design.md` (koreksi Linux)
+- Create: `tests/test_build_tools.py`
+- Modify: `main.py` (`selftest` ikut menguji ffmpeg yang dibundel)
+- Modify: `docs/superpowers/specs/2026-10-20-freqknife-design.md` (koreksi Linux + sumber statis)
+- Modify: `.gitignore` (abaikan `vendor/`)
 
-- [ ] **Step 1: Tulis skrip build Mac**
+- [ ] **Step 1: Tulis pengunduh ffmpeg statis, lalu skrip build Mac**
+
+**Kenapa skrip ini ada.** `ffmpeg` dari `brew`/`apt`/`choco` bergantung puluhan
+library dinamis yang hanya ada di mesin build (`otool -L` pada ffmpeg Homebrew
+menunjukkan 18 dependensi non-sistem di `/opt/homebrew/Cellar/…`). Membundelnya
+apa adanya membuat aplikasi **gagal di mesin lain** — sementara CI tetap hijau
+karena selftest berjalan di mesin yang sama. Itu jebakan yang harus dihindari,
+dan alasannya spec §10 menjanjikan ffmpeg ikut dibundel.
+
+`build/get_ffmpeg.py`:
+
+```python
+"""Unduh ffmpeg + ffprobe statis ke vendor/ffmpeg/ untuk platform ini.
+
+Pemakaian:
+    python build/get_ffmpeg.py           # dua baris: jalur ffmpeg, lalu ffprobe
+    python build/get_ffmpeg.py --env     # FFMPEG_FF= / FFMPEG_FP= untuk $GITHUB_ENV
+
+shortcut: verifikasi = kedua binary benar-benar bisa dijalankan (`-version`),
+bukan penguncian hash — itu yang menjamin aplikasi jalan di mesin lain. Pin
+sha256 per versi ditambahkan bila kelak butuh rantai pasokan yang kukuh.
+Lisensi dari arsip unduhan tidak ikut dibundel: rilis masih internal.
+"""
+
+import io
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import zipfile
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+AKAR = Path(__file__).resolve().parent.parent
+KELUAR = AKAR / "vendor" / "ffmpeg"
+BTBN = "BtbN/FFmpeg-Builds"
+MARTIN = "https://ffmpeg.martin-riedl.de"
+
+
+def sumber(plat=None, mesin=None):
+    """(jenis sumber, target) untuk platform ini — murni, bisa diuji tanpa jaringan."""
+    plat = sys.platform if plat is None else plat
+    mesin = platform.machine().lower() if mesin is None else mesin
+    arm = mesin in ("arm64", "aarch64")
+
+    if plat == "darwin":
+        return "martin", f"macos/{'arm64' if arm else 'amd64'}"
+    if plat.startswith("linux"):
+        return "btbn", "linuxarm64" if arm else "linux64"
+    if plat == "win32":
+        if arm:
+            raise SystemExit("sumber BtbN tidak menyediakan build statis Windows arm64")
+        return "btbn", "win64"
+    raise SystemExit(f"platform {plat} tidak didukung pengunduh ffmpeg")
+
+
+def _unduh(url):
+    req = Request(url, headers={"User-Agent": "FreqKnife-build"})
+    with urlopen(req, timeout=180) as r:
+        return r.read()
+
+
+def _tautan(jenis, target, nama):
+    if jenis == "btbn":
+        # tag "latest" di GitHub = URL stabil, isinya ffmpeg + ffprobe
+        return f"https://github.com/{BTBN}/releases/latest/download/{nama}"
+    # direktori rilis martin-riedl membawa stempel waktu+versi (…_9.0.2) yang
+    # berganti tiap rilis, dan tidak ada endpoint "latest" (indeksnya 403) —
+    # jadi tautannya dibaca dari halaman utama
+    html = _unduh(MARTIN + "/").decode("utf-8", "replace")
+    pola = re.compile(r'"(/download/' + re.escape(target) + r'/[^"]*/' +
+                      re.escape(nama) + r')"')
+    cocok = pola.findall(html)
+    if not cocok:
+        raise SystemExit(f"tautan {nama} untuk {target} tidak ditemukan di {MARTIN}")
+    return MARTIN + cocok[0]
+
+
+def _arsip(jenis, target):
+    if jenis == "martin":
+        return [_tautan(jenis, target, "ffmpeg.zip"),
+                _tautan(jenis, target, "ffprobe.zip")]
+    # Varian gpl tanpa akhiran "-shared": build BtbN ber-"shared" justru
+    # bergantung .so di sekitarnya — persis kesalahan yang sama dengan binary
+    # brew. gpl (bukan lgpl) dipilih sebagai superset encoder, jadi tidak mungkin
+    # kehilangan libmp3lame/libvorbis yang dipakai audio_io.CODEC_BY_EXT.
+    if target == "win64":
+        return [_tautan(jenis, target, "ffmpeg-master-latest-win64-gpl.zip")]
+    return [_tautan(jenis, target, f"ffmpeg-master-latest-{target}-gpl.tar.xz")]
+
+
+def _ekstrak(data, url, tujuan):
+    nama = url.rsplit("/", 1)[-1]
+    if nama.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            z.extractall(tujuan)
+    else:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:xz") as t:
+            # filter="data" menolak jalur absolut dan tautan keluar arsip
+            t.extractall(tujuan, filter="data")
+
+
+def _cari(akar, nama):
+    kandidat = [p for p in akar.rglob(nama) if p.is_file()]
+    if not kandidat:
+        raise SystemExit(f"{nama} tidak ada di dalam arsip setelah ekstrak")
+    # struktur arsip beda per sumber: martin taruh di akar, BtbN di <paket>/bin
+    return min(kandidat, key=lambda p: len(p.parts))
+
+
+def _uji(p):
+    hasil = subprocess.run([str(p), "-version"], stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT)
+    baris = hasil.stdout.decode(errors="replace").splitlines()
+    if hasil.returncode != 0:
+        raise SystemExit(f"{p} tidak bisa dijalankan (kode {hasil.returncode}):\n"
+                         + "\n".join(baris))
+    return baris[0] if baris else ""
+
+
+def utama(env=False):
+    jenis, target = sumber()
+    d = KELUAR / f"{jenis}-{target.replace('/', '-')}"
+    akhiran = ".exe" if sys.platform == "win32" else ""
+    ff, fp = d / f"ffmpeg{akhiran}", d / f"ffprobe{akhiran}"
+
+    if not (ff.is_file() and fp.is_file()):
+        if d.exists():
+            shutil.rmtree(d)      # ekstraksi gagal setengah jalan dari run lalu
+        d.mkdir(parents=True)
+        for url in _arsip(jenis, target):
+            print(f"unduh {url}", file=sys.stderr)
+            _ekstrak(_unduh(url), url, d)
+        for p in (ff, fp):
+            if not p.is_file():
+                shutil.move(str(_cari(d, p.name)), str(p))
+        if akhiran == "":
+            os.chmod(ff, 0o755)   # zip tidak menyimpan bit eksekusi
+            os.chmod(fp, 0o755)
+
+    for p in (ff, fp):
+        print(f"periksa {p.name}: {_uji(p)}", file=sys.stderr)
+
+    if env:
+        print(f"FFMPEG_FF={ff.as_posix()}")
+        print(f"FFMPEG_FP={fp.as_posix()}")
+    else:
+        print(ff.as_posix())
+        print(fp.as_posix())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(utama("--env" in sys.argv[1:]))
+```
+
+- [ ] **Step 2: Tulis test logika pengunduh (tanpa jaringan)**
+
+`tests/test_build_tools.py`:
+
+```python
+"""Logika pengunduh ffmpeg diuji tanpa jaringan: pemetaan platform + ekstraksi."""
+
+import sys
+import tarfile
+import zipfile
+from pathlib import Path
+
+import main
+
+sys.path.insert(0, str(Path(main.__file__).resolve().parent / "build"))
+import get_ffmpeg  # noqa: E402
+
+
+def test_pemetaan_platform_ke_sumber():
+    assert get_ffmpeg.sumber("darwin", "arm64") == ("martin", "macos/arm64")
+    assert get_ffmpeg.sumber("darwin", "x86_64") == ("martin", "macos/amd64")
+    assert get_ffmpeg.sumber("linux", "x86_64") == ("btbn", "linux64")
+    assert get_ffmpeg.sumber("linux", "aarch64") == ("btbn", "linuxarm64")
+    assert get_ffmpeg.sumber("win32", "amd64") == ("btbn", "win64")
+
+    import pytest
+    with pytest.raises(SystemExit):
+        get_ffmpeg.sumber("win32", "arm64")   # sumber tidak punya build arm64
+    with pytest.raises(SystemExit):
+        get_ffmpeg.sumber("sunos", "sparc")
+
+
+def test_ekstrak_zip_akar_dan_tar_berlapis(tmp_path):
+    """Martin taruh binary di akar zip, BtbN di <paket>/bin/ — dua-duanya harus ditemukan."""
+    paket = tmp_path / "ffmpeg-master-tes"
+    (paket / "bin").mkdir(parents=True)
+    (paket / "bin" / "ffmpeg").write_bytes(b"#sh")
+    (paket / "bin" / "ffprobe").write_bytes(b"#sh")
+    tar = tmp_path / "arsip.tar.xz"
+    with tarfile.open(tar, "w:xz") as t:
+        t.add(paket, arcname=paket.name)
+
+    zip_ = tmp_path / "ff.zip"
+    with zipfile.ZipFile(zip_, "w") as z:
+        z.writestr("ffmpeg", b"biner")
+        z.writestr("ffprobe", b"biner")
+
+    tujuan = tmp_path / "keluar"
+    tujuan.mkdir()
+    with tarfile.open(tar) as t:
+        t.extractall(tujuan, filter="data")
+    get_ffmpeg._ekstrak(zip_.read_bytes(), "https://x/ff.zip", tujuan)
+
+    ff = get_ffmpeg._cari(tujuan, "ffmpeg")
+    fp = get_ffmpeg._cari(tujuan, "ffprobe")
+    # yang paling dekat akar yang dipilih, bukan yang pertama ditemukan acak
+    assert ff == tujuan / "ffmpeg"
+    assert fp == tujuan / "ffprobe"
+```
+
+- [ ] **Step 3: Tulis skrip build Mac**
 
 `build/build_mac.sh`:
 
@@ -1869,12 +2092,19 @@ pip install --quiet -r requirements.txt
 
 python build/make_icons.py
 
+# ffmpeg statis: binary Homebrew bergantung dylib di /opt/homebrew yang tidak
+# ikut terbundel — hasilnya app hanya jalan di mesin build.
+# (bukan mapfile: macOS masih membawa bash 3.2)
+PATHS=$(python build/get_ffmpeg.py)
+FF=$(printf '%s\n' "$PATHS" | sed -n 1p)
+FP=$(printf '%s\n' "$PATHS" | sed -n 2p)
+
 pyinstaller --noconfirm --clean --onefile --windowed \
   --name FreqKnife \
   --icon assets/icon.icns \
   --add-data "assets/icon.icns:assets" \
-  --add-binary "$(command -v ffmpeg):." \
-  --add-binary "$(command -v ffprobe):." \
+  --add-binary "$FF:." \
+  --add-binary "$FP:." \
   main.py
 
 echo "Build selesai: dist/FreqKnife.app"
@@ -1886,17 +2116,81 @@ echo "Selftest:"
 chmod +x build/build_mac.sh
 ```
 
-- [ ] **Step 2: Build dan jalankan selftest**
+- [ ] **Step 4: Perkuat selftest agar menguji ffmpeg, lalu build**
+
+Selftest lama hanya menjalankan `dsp.split_bands` — **tidak pernah memanggil
+subprocess**. Artinya CI bisa hijau walaupun ffmpeg yang dibundel rusak atau
+hilang, persis pada bagian paling berisiko dari packaging. Ganti isi
+`selftest()` di `main.py` menjadi:
+
+```python
+def selftest():
+    """Verifikasi binary terbungkus tanpa GUI: DSP, lalu ffmpeg yang dibundel."""
+    import tempfile
+    import wave
+
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    x = (rng.standard_normal((8192, 2)) * 0.1).astype(np.float32)
+    bands = dsp.split_bands(x, 44100, 5)
+    galat = float(np.abs(np.sum(bands, axis=0) - x).max())
+    print(f"selftest dsp: {len(bands)} pita, galat rekonstruksi {galat:.2e}")
+    if galat >= 1e-3:
+        return 1
+
+    # ffmpeg/ffprobe yang dibundel harus benar-benar bisa dipakai. Tanpa
+    # langkah ini hasil CI tidak membuktikan apa-apa: DSP tidak pernah
+    # menyentuh subprocess, jadi binary yang rusak tetap dianggap lulus.
+    if audio_io.ffmpeg_missing():
+        print("selftest ffmpeg: TIDAK DITEMUKAN")
+        return 1
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="freqknife-selftest-") as kota:
+            kota = Path(kota)
+            src, raw = kota / "uji.wav", kota / "uji.f32le"
+            keluar = kota / "uji_band01.wav"
+            with wave.open(str(src), "wb") as w:
+                w.setnchannels(2)
+                w.setsampwidth(2)
+                w.setframerate(44100)
+                w.writeframes((x * 32767).astype("<i2").tobytes())
+
+            # ffprobe lewat decode_to_raw (juga membuktikan ffmpeg jalan)
+            sr, ch, n = audio_io.decode_to_raw(src, raw)
+            ext, codec = audio_io.output_plan(".wav")
+            audio_io.encode_raw(raw, keluar, sr, ch, codec)
+            if not keluar.exists() or keluar.stat().st_size == 0:
+                raise RuntimeError("keluaran kosong")
+            print(f"selftest ffmpeg: decode {n} frame {ch}ch {sr}Hz, encode {ext} OK")
+    except Exception as exc:
+        print(f"selftest ffmpeg: GAGAL — {exc}")
+        return 1
+
+    return 0
+```
+
+`wave` adalah modul stdlib, jadi PyInstaller ikut membundelnya otomatis.
+
+```bash
+. .venv/bin/activate && pytest tests/test_main.py -q && python main.py --selftest
+```
+
+Expected: test lulus dan selftest mencetak **dua** baris (`selftest dsp: …`
+dan `selftest ffmpeg: …`), exit code 0.
+
+- [ ] **Step 5: Build dan jalankan selftest terbungkus**
 
 ```bash
 bash build/build_mac.sh
 ```
 
-Expected: `dist/FreqKnife.app` terbentuk dan selftest mencetak `selftest: 5 pita, galat rekonstruksi ...e-07` dengan exit code 0.
+Expected: `dist/FreqKnife.app` terbentuk dan selftest mencetak `selftest dsp: 5 pita, galat rekonstruksi ...e-07` lalu `selftest ffmpeg: decode …`, dengan exit code 0.
 
 Kalau muncul `ffmpeg`/`ffprobe` tidak ditemukan, pastikan `brew install ffmpeg` sudah jalan lalu ulangi.
 
-- [ ] **Step 3: Verifikasi aplikasi terbungkus benar-benar jalan**
+- [ ] **Step 6: Verifikasi aplikasi terbungkus benar-benar jalan**
 
 ```bash
 ./dist/FreqKnife.app/Contents/MacOS/FreqKnife &
@@ -1909,7 +2203,7 @@ Checklist:
 
 Tutup aplikasinya setelah selesai.
 
-- [ ] **Step 4: Tulis workflow GitHub Actions**
+- [ ] **Step 7: Tulis workflow GitHub Actions**
 
 `.github/workflows/build.yml`:
 
@@ -1943,18 +2237,17 @@ jobs:
 
       - name: Pasang dependensi
         shell: bash
-        run: |
-          pip install -r requirements.txt
-          python build/make_icons.py
+        run: pip install -r requirements.txt
+        # icon TIDAK diregenerasi di CI: aset sudah di-commit, dan di luar
+        # macOS skrip itu melewati iconutil lalu meninggalkan assets/icon.iconset/
+        # yang tidak di-track sambil "memverifikasi" icns lama.
 
-      - name: Pasang ffmpeg
+      - name: Unduh ffmpeg statis
         shell: bash
-        run: |
-          case "$RUNNER_OS" in
-            macOS)   brew install ffmpeg ;;
-            Windows) choco install ffmpeg -y --no-progress ;;
-            Linux)   sudo apt-get update && sudo apt-get install -y ffmpeg ;;
-          esac
+        # binary brew/apt/choco tidak bisa dibundel (library dinamisnya tertinggal
+        # di mesin build), jadi ambil build statis. Baris ini juga membuktikan
+        # kedua binary benar-benar bisa dijalankan sebelum build dimulai.
+        run: python build/get_ffmpeg.py --env >> "$GITHUB_ENV"
 
       - name: Build macOS
         if: runner.os == 'macOS'
@@ -1963,30 +2256,34 @@ jobs:
           pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
             --icon assets/icon.icns \
             --add-data "assets/icon.icns:assets" \
-            --add-binary "$(command -v ffmpeg):." \
-            --add-binary "$(command -v ffprobe):." \
+            --add-binary "$FFMPEG_FF:." \
+            --add-binary "$FFMPEG_FP:." \
             main.py
 
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          # --icon .ico untuk ikon eksekutablenya; --add-data icon.png karena
+          # main.ICON mencari icon.png di luar macOS.
+          # Jalur sudah berbentuk C:/... (dicetak as_posix), jadi aman untuk
+          # PyInstaller native Windows dan tidak dimakan backslash Git Bash.
           pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
             --icon assets/icon.ico \
-            --add-data "assets/icon.ico;assets" \
-            --add-binary "$(command -v ffmpeg);." \
-            --add-binary "$(command -v ffprobe);." \
+            --add-data "assets/icon.png;assets" \
+            --add-binary "$FFMPEG_FF;." \
+            --add-binary "$FFMPEG_FP;." \
             main.py
 
       - name: Build Linux
         if: runner.os == 'Linux'
         shell: bash
+        # tanpa --icon: PyInstaller tidak memakai ikon di Linux
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name FreqKnife \
-            --icon assets/icon_512.png \
             --add-data "assets/icon.png:assets" \
-            --add-binary "$(command -v ffmpeg):." \
-            --add-binary "$(command -v ffprobe):." \
+            --add-binary "$FFMPEG_FF:." \
+            --add-binary "$FFMPEG_FP:." \
             main.py
 
       - name: Selftest binary
@@ -2005,9 +2302,11 @@ jobs:
           if-no-files-found: error
 ```
 
-- [ ] **Step 5: Koreksi spec soal Linux**
+- [ ] **Step 8: Koreksi spec (Linux dan sumber ffmpeg)**
 
-Buka `docs/superpowers/specs/2026-10-20-freqknife-design.md`, cari baris:
+Buka `docs/superpowers/specs/2026-10-20-freqknife-design.md`.
+
+Koreksi pertama, cari baris:
 
 ```
   menghasilkan `FreqKnife-mac.dmg`, `FreqKnife-win.exe`, `FreqKnife-linux.AppImage`.
@@ -2020,19 +2319,41 @@ Ganti menjadi:
   tunggal (Linux). AppImage ditunda — butuh `appimagetool` tambahan.
 ```
 
-- [ ] **Step 6: Push dan pantau Actions**
+Koreksi kedua, di §10 ganti baris:
 
-```bash
-git add .github/workflows/build.yml build/build_mac.sh docs/
-git commit -m "ci: build lintas platform dengan selftest binary"
-git push origin main
+```
+  `ffmpeg` dan `ffprobe` ikut dibundel lewat `binaries` di spec.
 ```
 
-Buka **https://github.com/dkeceh/FreqKnife/actions** dan tunggu ketiga job selesai. Expected: ketiga job hijau, artifact `FreqKnife-mac`, `FreqKnife-win`, `FreqKnife-linux` bisa diunduh.
+menjadi:
 
-Kalau job Windows gagal di `--add-binary "$(command -v ffmpeg);."` karena ffmpeg dari choco berupa wrapper `.bat`, gali binary asli dengan `where ffmpeg` lalu pakai path `.exe`-nya.
+```
+  `ffmpeg` dan `ffprobe` ikut dibundel sebagai **build statis** yang diunduh
+  `build/get_ffmpeg.py` (macOS/Linux: ffmpeg.martin-riedl.de, Windows/Linux: BtbN/FFmpeg-Builds).
+  Binary dari brew/apt/choco TIDAK bisa dipakai: mereka bergantung puluhan
+  library dinamis yang hanya ada di mesin build, sehingga aplikasi gagal di
+  mesin lain sementara CI tetap hijau karena selftest berjalan di mesin yang sama.
+```
 
-- [ ] **Step 7: Finalisasi**
+- [ ] **Step 9: Commit lalu push (controller)**
+
+```bash
+git add .github/workflows/build.yml build/ tests/test_build_tools.py \
+        main.py .gitignore docs/
+git commit -m "ci: build lintas platform dengan ffmpeg statis dan selftest binary"
+```
+
+Push dilakukan controller, bukan subagent. Setelah push, buka
+**https://github.com/dkeceh/FreqKnife/actions** dan tunggu ketiga job selesai.
+Expected: ketiga job hijau, artifact `FreqKnife-mac`, `FreqKnife-win`,
+`FreqKnife-linux` bisa diunduh, dan log "Selftest binary" menampilkan dua baris
+selftest (`selftest dsp:` + `selftest ffmpeg:`).
+
+Kalau sebuah job gagal, baca log langkah "Unduh ffmpeg statis" lebih dulu —
+karena di situ kedua binary sudah dibuktikan bisa dijalankan sebelum PyInstaller
+dijalankan, jadi kegagalan sesudahnya pasti di sisi build, bukan di sumber.
+
+- [ ] **Step 10: Finalisasi**
 
 ```bash
 . .venv/bin/activate && pytest
