@@ -233,6 +233,12 @@ wajib di CI karena butuh ffmpeg.
   Binary dari brew/apt/choco TIDAK bisa dipakai: mereka bergantung puluhan
   library dinamis yang hanya ada di mesin build, sehingga aplikasi gagal di
   mesin lain sementara CI tetap hijau karena selftest berjalan di mesin yang sama.
+- **Ketergantungan Linux**: `ffmpeg`/`ffprobe` memang dibundel penuh, tapi PySide6
+  masih menautkan pustaka Qt milik sistem (`libEGL.so.1`, `libGL`, `libxkbcommon0`,
+  `libdbus-1-3`, `libfontconfig1`, `libxcb-*`). Jadi artefak Linux hanya berjalan
+  di mesin yang sudah memasangnya —
+  `sudo apt-get install libegl1 libgl1 libglib2.0-0 libxkbcommon0 libdbus-1-3 libfontconfig1 libxcb-cursor0`.
+  Ini batasan Qt di Linux, bukan kekurangan bundling; macOS dan Windows tidak terpengaruh.
 - **Icon** dibuat sendiri: SVG → PNG (16/32/128/256/512) → `.icns` via `iconutil`
   untuk macOS, `.ico` untuk Windows, `.png` 512 untuk Linux. Bukan icon bawaan Python.
 - **GitHub Actions** matrix `macos-latest` / `windows-latest` / `ubuntu-latest`

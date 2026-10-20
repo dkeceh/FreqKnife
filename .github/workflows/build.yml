@@ -32,6 +32,21 @@ jobs:
         # macOS skrip itu melewati iconutil lalu meninggalkan assets/icon.iconset/
         # yang tidak di-track sambil "memverifikasi" icns lama.
 
+      - name: Pasang pustaka Qt (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        # Binary Linux memakai PySide6 yang menautkan libEGL.so.1 dan teman-temannya
+        # dari sistem. Tanpa ini selftest berhenti di import (ImportError libEGL.so.1)
+        # — bukan di ffmpeg. Pustaka yang sama dibutuhkan pengguna Linux saat
+        # menjalankan artefak.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libglib2.0-0 libxkbcommon0 libdbus-1-3 \
+            libfontconfig1 libx11-xcb1 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+
       - name: Unduh ffmpeg statis
         shell: bash
         # binary brew/apt/choco tidak bisa dibundel (library dinamisnya tertinggal
